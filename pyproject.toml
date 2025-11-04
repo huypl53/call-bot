@@ -4,9 +4,13 @@ version = "0.1.0"
 readme = "README.md"
 authors = [{ name = "kiaisoft", email = "aiteam@kiaisoft.com" }]
 requires-python = ">=3.9,<3.11"
-dependencies = ["fastapi[standard]>=0.121.0", "openai>=2.7.0", "twilio>=9.8.5"]
+dependencies = [
+    "fastapi[standard]>=0.121.0",
+    "openai[realtime]>=2.7.0",
+    "twilio>=9.8.5",
+]
 [dependency-groups]
-dev = ["ipykernel>=6.31.0"]
+dev = ["ipykernel>=6.31.0", "pytest>=8.0.0", "pytest-asyncio>=0.23.0"]
 
 [tool.uv.workspace]
 members = ["cti"]

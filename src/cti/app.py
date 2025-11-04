@@ -62,15 +62,3 @@ async def shutdown_event():
     print("\n" + "=" * 60)
     print("👋 KIAI Assistant Shutting down...")
     print("=" * 60)
-
-
-if __name__ == "__main__":
-    import uvicorn
-
-    uvicorn.run(
-        "cti.main:app",
-        host="0.0.0.0",
-        port=settings.PORT,
-        reload=settings.DEBUG,
-        log_level=settings.LOG_LEVEL.lower()
-    )

@@ -5,10 +5,11 @@ Sử dụng Pydantic để validate và load từ environment variables
 
 import os
 from typing import Optional
+
 from dotenv import load_dotenv
 
 # Load .env file
-load_dotenv()
+load_dotenv(override=True)
 
 
 class Settings:

@@ -2,12 +2,13 @@
 Twilio Service - Handle TwiML generation
 """
 
-from twilio.twiml.voice_response import VoiceResponse, Connect
-from src.config.constants import (
+from twilio.twiml.voice_response import Connect, VoiceResponse
+
+from cti.config.constants import (
     TWILIO_GREETING_MESSAGE,
-    TWILIO_READY_MESSAGE,
     TWILIO_GREETING_VOICE,
-    TWILIO_PAUSE_LENGTH
+    TWILIO_PAUSE_LENGTH,
+    TWILIO_READY_MESSAGE,
 )
 
 

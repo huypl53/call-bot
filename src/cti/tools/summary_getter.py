@@ -2,9 +2,10 @@
 Booking Summary Getter Tool
 """
 
-from typing import Dict, Any
-from src.tools.base import BaseTool
-from src.config.constants import BOOKING_FIELDS, GENDER_OPTIONS, ROOM_TYPE_OPTIONS
+from typing import Any, Dict
+
+from cti.config.constants import BOOKING_FIELDS, GENDER_OPTIONS, ROOM_TYPE_OPTIONS
+from cti.tools.base import BaseTool
 
 
 class SummaryGetterTool(BaseTool):

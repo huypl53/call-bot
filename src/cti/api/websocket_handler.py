@@ -2,19 +2,20 @@
 WebSocket Handler - Xử lý WebSocket connections giữa Twilio và OpenAI
 """
 
-import json
-import base64
 import asyncio
+import base64
+import json
+from typing import Optional
+
 import websockets
 from fastapi import WebSocket
 from fastapi.websockets import WebSocketDisconnect
-from typing import Optional
 
-from src.config.settings import settings
-from src.config.prompts import SYSTEM_MESSAGE
-from src.config.constants import OPENAI_MODEL, LOG_EVENT_TYPES, SHOW_TIMING_MATH
-from src.core.session_manager import SessionManager
-from src.services.tool_service import ToolService
+from cti.config.constants import LOG_EVENT_TYPES, OPENAI_MODEL, SHOW_TIMING_MATH
+from cti.config.prompts import SYSTEM_MESSAGE
+from cti.config.settings import settings
+from cti.core.session_manager import SessionManager
+from cti.services.tool_service import ToolService
 
 
 class WebSocketHandler:

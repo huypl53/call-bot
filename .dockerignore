@@ -38,3 +38,5 @@ tests/
 
 # Docker
 docker-compose.override.yml
+
+research/

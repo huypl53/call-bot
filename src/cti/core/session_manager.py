@@ -5,8 +5,9 @@ Session Manager - Moved from root to src/core/
 import json
 import os
 from datetime import datetime
-from typing import Dict, Any, Optional
-from src.config.constants import SESSIONS_DIRECTORY
+from typing import Any, Dict, Optional
+
+from cti.config.constants import SESSIONS_DIRECTORY
 
 
 class SessionManager:

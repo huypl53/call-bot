@@ -2,11 +2,12 @@
 Tool Service - Registry và execution cho tools
 """
 
-from typing import Dict, Any, List
-from src.tools.base import BaseTool
-from src.tools.room_checker import RoomCheckerTool
-from src.tools.booking_saver import BookingSaverTool
-from src.tools.summary_getter import SummaryGetterTool
+from typing import Any, Dict, List
+
+from cti.tools.base import BaseTool
+from cti.tools.booking_saver import BookingSaverTool
+from cti.tools.room_checker import RoomCheckerTool
+from cti.tools.summary_getter import SummaryGetterTool
 
 
 class ToolService:

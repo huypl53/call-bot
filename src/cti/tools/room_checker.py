@@ -3,14 +3,15 @@ Room Availability Checker Tool
 """
 
 import random
-from typing import Dict, Any, Optional
-from src.tools.base import BaseTool
-from src.config.constants import (
-    ROOM_AVAILABILITY_CHANCE,
-    MIN_AVAILABLE_ROOMS,
+from typing import Any, Dict, Optional
+
+from cti.config.constants import (
     MAX_AVAILABLE_ROOMS,
-    ROOM_TYPE_OPTIONS
+    MIN_AVAILABLE_ROOMS,
+    ROOM_AVAILABILITY_CHANCE,
+    ROOM_TYPE_OPTIONS,
 )
+from cti.tools.base import BaseTool
 
 
 class RoomCheckerTool(BaseTool):

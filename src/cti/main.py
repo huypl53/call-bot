@@ -6,9 +6,9 @@ Entry point cho FastAPI application
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.config.settings import settings
-from src.api.routes import router
-from src.api.websocket_handler import WebSocketHandler
+from cti.api.routes import router
+from cti.api.websocket_handler import WebSocketHandler
+from cti.config.settings import settings
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -68,7 +68,7 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(
-        "src.main:app",
+        "cti.main:app",
         host="0.0.0.0",
         port=settings.PORT,
         reload=settings.DEBUG,

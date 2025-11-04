@@ -2,9 +2,10 @@
 Booking Saver Tool
 """
 
-from typing import Dict, Any, Optional
-from src.tools.base import BaseTool
-from src.config.constants import BOOKING_FIELDS
+from typing import Any, Dict, Optional
+
+from cti.config.constants import BOOKING_FIELDS
+from cti.tools.base import BaseTool
 
 
 class BookingSaverTool(BaseTool):

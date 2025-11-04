@@ -4,7 +4,8 @@ API Routes for KIAI Assistant
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse
-from src.services.twilio_service import TwilioService
+
+from cti.services.twilio_service import TwilioService
 
 router = APIRouter()
 twilio_service = TwilioService()

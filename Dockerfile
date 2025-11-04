@@ -22,6 +22,9 @@ COPY .env* ./
 # Create sessions directory
 RUN mkdir -p sessions
 
+# Set PYTHONPATH to include src directory so cti module can be imported
+ENV PYTHONPATH=/app/src
+
 # Expose port
 EXPOSE 5050
 
@@ -30,4 +33,4 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD python -c "import requests; requests.get('http://localhost:5050/')" || exit 1
 
 # Run application
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "5050"]
+CMD ["uvicorn", "cti.main:app", "--host", "0.0.0.0", "--port", "5050"]

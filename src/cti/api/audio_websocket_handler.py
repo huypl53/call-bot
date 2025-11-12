@@ -86,11 +86,13 @@ class AudioWebSocketHandler:
                 session_manager: Optional[SessionManager] = None
                 is_paused = False
                 last_interruption_time = 0
-                interruption_cooldown_ms = 5000  # 2 second cooldown between interruptions
+                interruption_cooldown_ms = 1000  # 1 second cooldown between interruptions
+                is_response_active = False
+                current_response_id: Optional[str] = None
 
                 async def receive_from_client():
                     """Receive audio/text from client and forward to OpenAI"""
-                    nonlocal session_id, latest_media_timestamp, session_manager, is_paused
+                    nonlocal session_id, latest_media_timestamp, session_manager, is_paused, is_response_active, current_response_id
 
                     try:
                         while True:
@@ -176,6 +178,13 @@ class AudioWebSocketHandler:
                                         is_paused = True
                                     elif event_type == "resume":
                                         is_paused = False
+                                    elif event_type == "stop":
+                                        # Stop current response immediately
+                                        try:
+                                            await connection.response.cancel()
+                                        except Exception as e:
+                                            logger.warning(f"Failed to cancel response on stop: {e}", extra={"handler": "file"})
+                                        await websocket.send_json({"event": "clear"})
 
                             except (KeyError, ValueError, TypeError) as e:
                                 # Safely convert exception to string, handling bytes if present
@@ -220,7 +229,7 @@ class AudioWebSocketHandler:
 
                 async def send_to_client():
                     """Receive events from OpenAI and send audio to client"""
-                    nonlocal last_assistant_item, response_start_timestamp, last_interruption_time
+                    nonlocal last_assistant_item, response_start_timestamp, last_interruption_time, is_response_active, current_response_id
 
                     try:
                         async for event in connection:
@@ -234,6 +243,25 @@ class AudioWebSocketHandler:
                                     f"Received event: {event.type}: {event.model_dump_json()}",
                                     extra={"handler": "file"},
                                 )
+
+                            # Track response state
+                            if event.type == "response.created":
+                                is_response_active = True
+                                if hasattr(event, "response_id"):
+                                    current_response_id = event.response_id
+                                logger.info("Response started", extra={"handler": "file"})
+                            elif event.type == "response.done":
+                                is_response_active = False
+                                current_response_id = None
+                                logger.info("Response done detected")
+                                await websocket.send_json({"event": "response.done"})
+                            elif event.type == "response.cancelled":
+                                is_response_active = False
+                                current_response_id = None
+                                logger.info("Response cancelled")
+                                await websocket.send_json({"event": "response.cancelled"})
+                                # Clear audio queue on cancellation
+                                await websocket.send_json({"event": "clear"})
 
                             # Handle function call
                             if event.type == "response.function_call_arguments.done":
@@ -266,34 +294,33 @@ class AudioWebSocketHandler:
                                 ):
                                     response_start_timestamp = latest_media_timestamp
                                     last_assistant_item = event.item_id
-                            elif event.type == "response.done":
-                                logger.info("Response done detected")
-                                await websocket.send_json({"event": "response.done"})
 
-                            # Handle interruption with cooldown to prevent rapid interruptions
+                            # Handle interruption - OpenAI will handle it automatically, but we track it
                             if event.type == "input_audio_buffer.speech_started":
                                 current_time = latest_media_timestamp
                                 time_since_last_interruption = current_time - last_interruption_time
                                 
-                                # Only handle interruption if cooldown period has passed
+                                # Only log if cooldown period has passed
                                 if time_since_last_interruption >= interruption_cooldown_ms:
-                                    logger.info("Speech started detected")
-                                    if last_assistant_item:
+                                    logger.info("Speech started detected", extra={"handler": "file"})
+                                    if is_response_active and last_assistant_item:
                                         logger.info(
-                                            f"Interrupting response with id: {last_assistant_item}"
+                                            f"User interrupting active response with id: {last_assistant_item}",
+                                            extra={"handler": "file"}
                                         )
                                         last_interruption_time = current_time
-                                        await self._handle_speech_started(
-                                            connection,
-                                            websocket,
-                                            latest_media_timestamp,
-                                            response_start_timestamp,
-                                            last_assistant_item,
-                                            send_clear=True,  # Don't send clear event automatically
-                                        )
+                                        # Cancel the current response if it's still active
+                                        if current_response_id:
+                                            try:
+                                                await connection.response.cancel()
+                                            except Exception as e:
+                                                logger.warning(f"Failed to cancel response: {e}", extra={"handler": "file"})
+                                        # Send clear event to client to stop playback
+                                        await websocket.send_json({"event": "clear"})
                                 else:
                                     logger.debug(
-                                        f"Ignoring speech_started event (cooldown: {interruption_cooldown_ms - time_since_last_interruption}ms remaining)"
+                                        f"Ignoring speech_started event (cooldown: {interruption_cooldown_ms - time_since_last_interruption}ms remaining)",
+                                        extra={"handler": "file"}
                                     )
 
                     except Exception as e:
@@ -334,7 +361,7 @@ class AudioWebSocketHandler:
                         "prefix_padding_ms": 300,
                         "silence_duration_ms": 200,
                         "create_response": True,
-                        "interrupt_response": False,  # Disable interruption for web client
+                        "interrupt_response": True,  # Enable automatic interruption
                     },
                 },
                 "output": {
@@ -391,21 +418,24 @@ class AudioWebSocketHandler:
             )
 
     async def _handle_control_message(
-        self, control_msg: ControlMessage, connection, is_paused: bool
+        self, control_msg: ControlMessage, connection: AsyncRealtimeConnection, is_paused: bool
     ):
         """Handle control messages (pause, resume, stop, clear)"""
         event_type = control_msg.get("event")
 
         if event_type == "stop":
-            # Stop current response
-            if hasattr(connection, "response") and hasattr(
-                connection.response, "cancel"
-            ):
+            # Stop current response immediately
+            try:
                 await connection.response.cancel()
+            except Exception as e:
+                logger.warning(f"Error cancelling response: {e}", extra={"handler": "file"})
         elif event_type == "clear":
             # Clear input buffer
-            if hasattr(connection, "input_audio_buffer"):
-                await connection.input_audio_buffer.clear()
+            try:
+                if hasattr(connection, "input_audio_buffer"):
+                    await connection.input_audio_buffer.clear()
+            except Exception as e:
+                logger.warning(f"Error clearing input buffer: {e}", extra={"handler": "file"})
 
     async def _handle_function_call(
         self,

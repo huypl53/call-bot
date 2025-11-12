@@ -236,6 +236,14 @@
                 this.audioQueue = [];
                 this.isPlaying = false;
                 this.nextPlayTime = 0;
+                // Voice Activity Detection (VAD) state
+                this.vadThreshold = 0.01; // Threshold for detecting speech (adjust based on testing)
+                this.vadSilenceFrames = 0;
+                this.vadSilenceThreshold = 10; // Frames of silence before considering speech ended
+                this.isUserSpeaking = false;
+                this.isAssistantSpeaking = false;
+                this.audioSources = []; // Track active audio sources for immediate stop
+                this.lastAudioLevel = 0;
             }
 
             log(message, type = 'info') {
@@ -432,6 +440,28 @@
                         if (!this.isRecording) return;
 
                         const inputData = e.inputBuffer.getChannelData(0);
+                        
+                        // Voice Activity Detection (VAD)
+                        const audioLevel = this.calculateAudioLevel(inputData);
+                        this.lastAudioLevel = audioLevel;
+                        const wasUserSpeaking = this.isUserSpeaking;
+                        
+                        if (audioLevel > this.vadThreshold) {
+                            this.vadSilenceFrames = 0;
+                            this.isUserSpeaking = true;
+                            
+                            // If user starts speaking while assistant is speaking, interrupt
+                            if (!wasUserSpeaking && this.isAssistantSpeaking) {
+                                console.log('[VAD] User started speaking, interrupting assistant');
+                                this.sendStopEvent();
+                            }
+                        } else {
+                            this.vadSilenceFrames++;
+                            if (this.vadSilenceFrames > this.vadSilenceThreshold) {
+                                this.isUserSpeaking = false;
+                            }
+                        }
+                        
                         const pcm16 = this.floatTo16BitPCM(inputData);
                         const base64 = this.arrayBufferToBase64(pcm16.buffer);
 
@@ -514,6 +544,31 @@
                 this.log('Recording stopped', 'info');
             }
 
+            calculateAudioLevel(audioData) {
+                // Calculate RMS (Root Mean Square) audio level
+                let sum = 0;
+                for (let i = 0; i < audioData.length; i++) {
+                    sum += audioData[i] * audioData[i];
+                }
+                return Math.sqrt(sum / audioData.length);
+            }
+
+            sendStopEvent() {
+                if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    try {
+                        const message = {
+                            event: 'stop'
+                        };
+                        const jsonString = JSON.stringify(message);
+                        this.ws.send(jsonString);
+                        console.log('[SEND] Stop event sent to interrupt assistant');
+                        this.log('Interrupting assistant', 'info');
+                    } catch (error) {
+                        console.error('[SEND] Error sending stop event:', error);
+                    }
+                }
+            }
+
             floatTo16BitPCM(float32Array) {
                 const buffer = new ArrayBuffer(float32Array.length * 2);
                 const view = new DataView(buffer);
@@ -564,11 +619,18 @@
 
                 if (eventType === 'audio') {
                     console.log('[HANDLE] Processing audio chunk');
+                    this.isAssistantSpeaking = true;
                     this.handleAudioChunk(data);
                 } else if (eventType === 'response.done') {
                     console.log('[HANDLE] Response done');
+                    this.isAssistantSpeaking = false;
                     this.log('Response complete', 'success');
                     this.finishAudioPlayback();
+                } else if (eventType === 'response.cancelled') {
+                    console.log('[HANDLE] Response cancelled');
+                    this.isAssistantSpeaking = false;
+                    this.log('Response cancelled', 'info');
+                    this.stopAudioPlayback();
                 } else if (eventType === 'error') {
                     const errorMsg = data.message || 'Unknown server error';
                     console.error('[HANDLE] Server error:', errorMsg, data);
@@ -576,15 +638,8 @@
                 } else if (eventType === 'clear') {
                     console.log('[HANDLE] Clear event');
                     this.log('Clear event received', 'info');
-                    this.audioChunks = [];
-                    // Clear audio queue and reset playback
-                    this.audioQueue = [];
-                    this.isPlaying = false;
-                    this.nextPlayTime = 0;
-                    if (this.playbackContext) {
-                        this.playbackContext.close();
-                        this.playbackContext = null;
-                    }
+                    this.isAssistantSpeaking = false;
+                    this.stopAudioPlayback();
                 } else {
                     console.warn('[HANDLE] Unknown event type:', eventType, data);
                     this.log(`Unknown event type: ${eventType}`, 'info');
@@ -609,6 +664,32 @@
                 } else {
                     console.warn('[AUDIO] Audio chunk missing payload', data);
                 }
+            }
+
+            stopAudioPlayback() {
+                // Stop all active audio sources immediately
+                this.audioSources.forEach(source => {
+                    try {
+                        source.stop();
+                    } catch (e) {
+                        // Source may already be stopped
+                    }
+                });
+                this.audioSources = [];
+                
+                // Clear audio queue and reset playback
+                this.audioChunks = [];
+                this.audioQueue = [];
+                this.isPlaying = false;
+                this.nextPlayTime = 0;
+                
+                // Optionally close and recreate playback context for clean state
+                if (this.playbackContext) {
+                    this.playbackContext.close();
+                    this.playbackContext = null;
+                }
+                
+                console.log('[AUDIO] Playback stopped and cleared');
             }
 
             queueAudioChunk(audioData) {
@@ -659,6 +740,9 @@
                     source.buffer = buffer;
                     source.connect(this.playbackContext.destination);
                     
+                    // Track this source so we can stop it if interrupted
+                    this.audioSources.push(source);
+                    
                     // Schedule playback at the correct time to avoid gaps
                     const currentTime = this.playbackContext.currentTime;
                     const startTime = Math.max(currentTime, this.nextPlayTime);
@@ -670,12 +754,19 @@
 
                     // Handle source end - process next chunk in queue
                     source.onended = () => {
+                        // Remove from active sources
+                        const index = this.audioSources.indexOf(source);
+                        if (index > -1) {
+                            this.audioSources.splice(index, 1);
+                        }
+                        
                         console.log('[AUDIO] Audio chunk finished playing, queue length:', this.audioQueue.length);
                         // Continue processing queue
                         if (this.audioQueue.length > 0) {
                             this.processAudioQueue();
                         } else {
                             this.isPlaying = false;
+                            this.isAssistantSpeaking = false;
                             console.log('[AUDIO] Audio queue empty, playback finished');
                         }
                     };
@@ -748,15 +839,10 @@
                     this.ws = null;
                 }
                 this.stopRecording();
-                // Clear audio queue
-                this.audioQueue = [];
-                this.isPlaying = false;
-                this.nextPlayTime = 0;
-                if (this.playbackContext) {
-                    console.log('[DISCONNECT] Closing playback context');
-                    this.playbackContext.close();
-                    this.playbackContext = null;
-                }
+                this.stopAudioPlayback();
+                // Reset VAD state
+                this.isUserSpeaking = false;
+                this.isAssistantSpeaking = false;
             }
         }
 

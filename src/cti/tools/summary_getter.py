@@ -5,6 +5,7 @@ Booking Summary Getter Tool
 from typing import Any, Dict
 
 from cti.config.constants import BOOKING_FIELDS, GENDER_OPTIONS, ROOM_TYPE_OPTIONS
+from cti.core.session_manager import SessionManager
 from cti.tools.base import BaseTool
 
 
@@ -27,7 +28,7 @@ class SummaryGetterTool(BaseTool):
             }
         }
 
-    async def execute(self, session_manager: Any, **kwargs) -> Dict[str, Any]:
+    async def execute(self, session_manager: SessionManager, **kwargs) -> Dict[str, Any]:
         """Execute get booking summary"""
         summary = session_manager.get_booking_summary()
         booking_info = summary["booking_info"]

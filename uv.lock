@@ -365,6 +365,7 @@ source = { editable = "." }
 dependencies = [
     { name = "azure-identity" },
     { name = "fastapi", extra = ["standard"] },
+    { name = "httpx" },
     { name = "openai", extra = ["realtime"] },
     { name = "twilio" },
 ]
@@ -381,6 +382,7 @@ dev = [
 requires-dist = [
     { name = "azure-identity", specifier = ">=1.25.1" },
     { name = "fastapi", extras = ["standard"], specifier = ">=0.121.0" },
+    { name = "httpx", specifier = ">=0.27.0" },
     { name = "openai", extras = ["realtime"], specifier = ">=2.7.0" },
     { name = "twilio", specifier = ">=9.8.5" },
 ]

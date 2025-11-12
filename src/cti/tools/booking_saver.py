@@ -5,6 +5,7 @@ Booking Saver Tool
 from typing import Any, Dict, Optional
 
 from cti.config.constants import BOOKING_FIELDS
+from cti.core.session_manager import SessionManager
 from cti.tools.base import BaseTool
 
 
@@ -43,7 +44,7 @@ class BookingSaverTool(BaseTool):
             }
         }
 
-    async def execute(self, session_manager: Any, **kwargs) -> Dict[str, Any]:
+    async def execute(self, session_manager: SessionManager, **kwargs) -> Dict[str, Any]:
         """Execute save booking info"""
         session_manager.update_booking_info(**kwargs)
         summary = session_manager.get_booking_summary()

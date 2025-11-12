@@ -5,8 +5,17 @@ Tool Service - Registry và execution cho tools
 from typing import Any, Dict, List
 
 from cti.tools.base import BaseTool
+from cti.tools.booking_api import (
+    CheckBookingAvailabilityTool,
+    CreateBookingTool,
+    GetBookingDetailTool,
+    GetBookingListTool,
+    UpdateBookingStatusTool,
+)
 from cti.tools.booking_saver import BookingSaverTool
+from cti.tools.employee_api import GetEmployeeListTool
 from cti.tools.room_checker import RoomCheckerTool
+from cti.tools.service_api import GetServiceListTool
 from cti.tools.summary_getter import SummaryGetterTool
 
 
@@ -24,9 +33,16 @@ class ToolService:
     def _register_default_tools(self):
         """Register các tools mặc định"""
         tools = [
-            RoomCheckerTool(),
-            BookingSaverTool(),
-            SummaryGetterTool()
+            # RoomCheckerTool(),
+            # BookingSaverTool(),
+            SummaryGetterTool(),
+            GetBookingListTool(),
+            GetBookingDetailTool(),
+            CheckBookingAvailabilityTool(),
+            CreateBookingTool(),
+            UpdateBookingStatusTool(),
+            GetEmployeeListTool(),
+            GetServiceListTool(),
         ]
         for tool in tools:
             self.register_tool(tool)

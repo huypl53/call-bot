@@ -4,7 +4,9 @@ Base Tool class cho KIAI Assistant
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional
+from typing import Any, Dict
+
+from cti.core.session_manager import SessionManager
 
 
 class BaseTool(ABC):
@@ -24,11 +26,12 @@ class BaseTool(ABC):
         pass
 
     @abstractmethod
-    async def execute(self, **kwargs) -> Dict[str, Any]:
+    async def execute(self, session_manager: SessionManager, **kwargs) -> Dict[str, Any]:
         """
         Execute tool với arguments được cung cấp.
 
         Args:
+            session_manager: Session manager instance
             **kwargs: Arguments từ OpenAI function call
 
         Returns:

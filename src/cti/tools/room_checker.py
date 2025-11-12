@@ -3,7 +3,7 @@ Room Availability Checker Tool
 """
 
 import random
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from cti.config.constants import (
     MAX_AVAILABLE_ROOMS,
@@ -11,6 +11,7 @@ from cti.config.constants import (
     ROOM_AVAILABILITY_CHANCE,
     ROOM_TYPE_OPTIONS,
 )
+from cti.core.session_manager import SessionManager
 from cti.tools.base import BaseTool
 
 
@@ -49,10 +50,10 @@ class RoomCheckerTool(BaseTool):
 
     async def execute(
         self,
+        session_manager: SessionManager,
         check_in_date: str,
         check_out_date: str,
         room_type: str,
-        session_manager: Optional[Any] = None,
         **kwargs
     ) -> Dict[str, Any]:
         """Execute room availability check"""
@@ -82,8 +83,7 @@ class RoomCheckerTool(BaseTool):
                 "message": f"Rất tiếc, {room_type_vn} đã hết cho khoảng thời gian từ {check_in_date} đến {check_out_date}. Quý khách có muốn thử ngày khác hoặc loại phòng khác không?"
             }
 
-        # Save to session history if provided
-        if session_manager:
-            session_manager.add_room_check(result.copy())
+        # Save to session history
+        session_manager.add_room_check(result.copy())
 
         return result

@@ -12,7 +12,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from cti.api.audio_websocket_handler import AudioWebSocketHandler
 from cti.api.routes import router
-from cti.api.websocket_handler import WebSocketHandler
+
+# from cti.api.websocket_handler import WebSocketHandler
+from cti.api.websocket_handler_new import WebSocketHandler
 from cti.config.settings import settings
 
 logger = logging.getLogger()
@@ -84,6 +86,7 @@ async def media_stream_endpoint(websocket: WebSocket):
     Args:
         websocket: FastAPI WebSocket connection
     """
+    logger.info("Media stream endpoint connected: %s", websocket.client.host)
     await ws_handler.handle_connection(websocket)
 
 
@@ -95,6 +98,7 @@ async def audio_stream_endpoint(websocket: WebSocket):
     Args:
         websocket: FastAPI WebSocket connection
     """
+    logger.info("Audio stream endpoint connected: %s", websocket.client.host)
     await audio_ws_handler.handle_connection(websocket)
 
 

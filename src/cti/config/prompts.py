@@ -60,6 +60,7 @@ SYSTEM_MESSAGE = (
     "- Khi tạo booking, source luôn là 'phone' và twilioCallSid có thể lấy từ session_manager.stream_sid"
 )
 
+SYSTEM_MESSAGE = "Bạn là KIAI assistant, trợ lý ảo thông minh hỗ trợ đặt lịch dịch vụ. Bạn LUÔN LUÔN nói tiếng Việt."
 # Alternative prompts cho testing hoặc các scenarios khác
 SYSTEM_MESSAGE_CONCISE = (
     "Bạn là KIAI assistant. Luôn nói tiếng Việt. "

@@ -85,15 +85,54 @@ class AudioWebSocketHandler:
                 response_start_timestamp = None
                 session_manager: Optional[SessionManager] = None
                 is_paused = False
+                last_interruption_time = 0
+                interruption_cooldown_ms = 5000  # 2 second cooldown between interruptions
 
                 async def receive_from_client():
                     """Receive audio/text from client and forward to OpenAI"""
                     nonlocal session_id, latest_media_timestamp, session_manager, is_paused
 
                     try:
-                        async for message in websocket.iter_text():
+                        while True:
                             try:
-                                data: dict = json.loads(message)
+                                # Receive message - handle both text and bytes
+                                raw_message = await websocket.receive()
+                                
+                                # FastAPI WebSocket returns dict with 'type' and 'text' or 'bytes'
+                                if raw_message.get("type") == "websocket.receive":
+                                    if "text" in raw_message:
+                                        message_text = raw_message["text"]
+                                    elif "bytes" in raw_message:
+                                        # If bytes received, try to decode as UTF-8
+                                        try:
+                                            message_text = raw_message["bytes"].decode("utf-8")
+                                        except UnicodeDecodeError:
+                                            logger.error("Received binary data that cannot be decoded as UTF-8", extra={"handler": "file"})
+                                            await websocket.send_json({
+                                                "event": "error",
+                                                "message": "Invalid message format: binary data received"
+                                            })
+                                            continue
+                                    else:
+                                        logger.warning("Received message without text or bytes", extra={"handler": "file"})
+                                        continue
+                                elif raw_message.get("type") == "websocket.disconnect":
+                                    break
+                                else:
+                                    # Skip other message types
+                                    continue
+                                
+                                # Parse JSON message
+                                try:
+                                    data: dict = json.loads(message_text)
+                                except json.JSONDecodeError as json_err:
+                                    logger.error(f"Invalid JSON received: {str(json_err)}", extra={"handler": "file"})
+                                    await websocket.send_json({
+                                        "event": "error",
+                                        "message": f"Invalid JSON format: {str(json_err)}"
+                                    })
+                                    continue
+                                
                                 event_type = data.get("event")
 
                                 if event_type == "audio":
@@ -108,10 +147,10 @@ class AudioWebSocketHandler:
                                         latest_media_timestamp = (
                                             timestamp or latest_media_timestamp
                                         )
-                                        # Decode base64 and append to OpenAI input buffer
-                                        audio_data = base64.b64decode(payload)
+                                        # OpenAI API expects base64-encoded string, not bytes
+                                        # Pass the payload directly (it's already base64-encoded)
                                         await connection.input_audio_buffer.append(
-                                            audio=audio_data
+                                            audio=payload
                                         )
 
                                 elif event_type == "start":
@@ -139,22 +178,40 @@ class AudioWebSocketHandler:
                                         is_paused = False
 
                             except (KeyError, ValueError, TypeError) as e:
-                                logger.error(f"Error parsing message: {e}", extra={"handler": "file"})
-                                await websocket.send_json(
-                                    {
+                                # Safely convert exception to string, handling bytes if present
+                                try:
+                                    error_msg = str(e)
+                                    # Ensure error message is JSON-serializable
+                                    error_msg = error_msg.encode('utf-8', errors='replace').decode('utf-8')
+                                except Exception:
+                                    error_msg = "Unknown error occurred"
+                                
+                                logger.error(f"Error parsing message: {error_msg}", extra={"handler": "file"})
+                                try:
+                                    await websocket.send_json({
                                         "event": "error",
-                                        "message": f"Invalid message format: {str(e)}",
-                                    }
-                                )
+                                        "message": f"Invalid message format: {error_msg}"
+                                    })
+                                except Exception as send_error:
+                                    logger.error(f"Failed to send error message: {send_error}", extra={"handler": "file"})
                                 
                             except Exception as e:
-                                logger.error(f"Error in receive_from_client: {e}", extra={"handler": "file"})
-                                await websocket.send_json(
-                                    {
+                                # Safely convert exception to string, handling bytes if present
+                                try:
+                                    error_msg = str(e)
+                                    # Ensure error message is JSON-serializable
+                                    error_msg = error_msg.encode('utf-8', errors='replace').decode('utf-8')
+                                except Exception:
+                                    error_msg = "Unknown error occurred"
+                                
+                                logger.error(f"Error in receive_from_client: {error_msg}", extra={"handler": "file"})
+                                try:
+                                    await websocket.send_json({
                                         "event": "error",
-                                        "message": f"Invalid message format: {str(e)}",
-                                    }
-                                )
+                                        "message": f"Server error: {error_msg}"
+                                    })
+                                except Exception as send_error:
+                                    logger.error(f"Failed to send error message: {send_error}", extra={"handler": "file"})
 
                     except WebSocketDisconnect:
                         logger.info("Client disconnected")
@@ -163,7 +220,7 @@ class AudioWebSocketHandler:
 
                 async def send_to_client():
                     """Receive events from OpenAI and send audio to client"""
-                    nonlocal last_assistant_item, response_start_timestamp
+                    nonlocal last_assistant_item, response_start_timestamp, last_interruption_time
 
                     try:
                         async for event in connection:
@@ -213,19 +270,30 @@ class AudioWebSocketHandler:
                                 logger.info("Response done detected")
                                 await websocket.send_json({"event": "response.done"})
 
-                            # Handle interruption
+                            # Handle interruption with cooldown to prevent rapid interruptions
                             if event.type == "input_audio_buffer.speech_started":
-                                logger.info("Speech started detected")
-                                if last_assistant_item:
-                                    logger.info(
-                                        f"Interrupting response with id: {last_assistant_item}"
-                                    )
-                                    await self._handle_speech_started(
-                                        connection,
-                                        websocket,
-                                        latest_media_timestamp,
-                                        response_start_timestamp,
-                                        last_assistant_item,
+                                current_time = latest_media_timestamp
+                                time_since_last_interruption = current_time - last_interruption_time
+                                
+                                # Only handle interruption if cooldown period has passed
+                                if time_since_last_interruption >= interruption_cooldown_ms:
+                                    logger.info("Speech started detected")
+                                    if last_assistant_item:
+                                        logger.info(
+                                            f"Interrupting response with id: {last_assistant_item}"
+                                        )
+                                        last_interruption_time = current_time
+                                        await self._handle_speech_started(
+                                            connection,
+                                            websocket,
+                                            latest_media_timestamp,
+                                            response_start_timestamp,
+                                            last_assistant_item,
+                                            send_clear=True,  # Don't send clear event automatically
+                                        )
+                                else:
+                                    logger.debug(
+                                        f"Ignoring speech_started event (cooldown: {interruption_cooldown_ms - time_since_last_interruption}ms remaining)"
                                     )
 
                     except Exception as e:
@@ -266,6 +334,7 @@ class AudioWebSocketHandler:
                         "prefix_padding_ms": 300,
                         "silence_duration_ms": 200,
                         "create_response": True,
+                        "interrupt_response": False,  # Disable interruption for web client
                     },
                 },
                 "output": {
@@ -277,10 +346,8 @@ class AudioWebSocketHandler:
                 },
             },
             "instructions": SYSTEM_MESSAGE,
-            "tools": self.tool_service.get_tool_definitions(),
+            # "tools": self.tool_service.get_tool_definitions(),
             "tool_choice": "auto",
-            # "instructions": "You are a helpful assistant. You respond by voice and text.",
-            # "output_modalities": ["audio"],
         }
         logger.info(
             f"Sending session update: {json.dumps(session_config, ensure_ascii=False)}",
@@ -398,15 +465,29 @@ class AudioWebSocketHandler:
         latest_media_timestamp: int,
         response_start_timestamp: Optional[int],
         last_assistant_item: Optional[str],
+        send_clear: bool = False,
     ):
         """Handle speech interruption"""
         if response_start_timestamp is not None and last_assistant_item:
             elapsed_time = latest_media_timestamp - response_start_timestamp
 
-            await connection.conversation.item.truncate(
-                item_id=last_assistant_item,
-                content_index=0,
-                audio_end_ms=elapsed_time,
-            )
+            # Only truncate if elapsed_time is positive and reasonable
+            if elapsed_time > 0:
+                try:
+                    await connection.conversation.item.truncate(
+                        item_id=last_assistant_item,
+                        content_index=0,
+                        audio_end_ms=elapsed_time,
+                    )
+                except Exception as e:
+                    # Handle case where audio is shorter than elapsed_time
+                    # This can happen if timestamps are inaccurate or audio finished early
+                    logger.warning(
+                        f"Failed to truncate audio at {elapsed_time}ms: {e}",
+                        extra={"handler": "file"}
+                    )
+                    # Continue anyway - the interruption will still be handled
 
-            await websocket.send_json({"event": "clear"})
+            # Only send clear event if explicitly requested
+            if send_clear:
+                await websocket.send_json({"event": "clear"})

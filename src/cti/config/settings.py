@@ -20,7 +20,9 @@ class Settings:
 
     def __init__(self):
         # Required settings
-        self.OPENAI_API_KEY: str = self._get_required_env("OPENAI_API_KEY")
+        self.OPENAI_API_KEY: str = self._get_required_env("AZURE_OPENAI_API_KEY")
+        self.OPENAI_BASE_URL: str = self._get_required_env("AZURE_OPENAI_BASE_URL")
+        self.MODEL: str = 'gpt-realtime-mini'
 
         # Optional settings with defaults
         self.PORT: int = int(os.getenv("PORT", "5050"))

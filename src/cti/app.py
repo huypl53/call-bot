@@ -3,12 +3,54 @@ KIAI Assistant - Main Application
 Entry point cho FastAPI application
 """
 
+import logging
+import sys
+from pathlib import Path
+
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 
+from cti.api.audio_websocket_handler import AudioWebSocketHandler
 from cti.api.routes import router
 from cti.api.websocket_handler import WebSocketHandler
 from cti.config.settings import settings
+
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+# Add handler if none exists
+if not logger.handlers:
+    formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    
+    # Console handler with filter
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(logging.INFO)
+    console_handler.setFormatter(formatter)
+    
+    def console_filter(record):
+        """Only log to console if handler is not specified or is 'console'"""
+        handler = getattr(record, 'handler', None)
+        return handler is None or handler == 'console'
+    
+    console_handler.addFilter(console_filter)
+    logger.addHandler(console_handler)
+    
+    # File handler with filter
+    logs_dir = Path("logs")
+    logs_dir.mkdir(exist_ok=True)
+    log_file = logs_dir / "app.log"
+    file_handler = logging.FileHandler(log_file, mode='w', encoding='utf-8')
+    file_handler.setLevel(logging.INFO)
+    file_handler.setFormatter(formatter)
+    
+    def file_filter(record):
+        """Only log to file if handler is not specified or is 'file'"""
+        handler = getattr(record, 'handler', None)
+        return handler is None or handler == 'file'
+    
+    file_handler.addFilter(file_filter)
+    logger.addHandler(file_handler)
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -29,8 +71,9 @@ app.add_middleware(
 # Include routes
 app.include_router(router)
 
-# Initialize WebSocket handler
+# Initialize WebSocket handlers
 ws_handler = WebSocketHandler()
+audio_ws_handler = AudioWebSocketHandler()
 
 
 @app.websocket("/media-stream")
@@ -42,6 +85,17 @@ async def media_stream_endpoint(websocket: WebSocket):
         websocket: FastAPI WebSocket connection
     """
     await ws_handler.handle_connection(websocket)
+
+
+@app.websocket("/audio-stream")
+async def audio_stream_endpoint(websocket: WebSocket):
+    """
+    WebSocket endpoint for flexible bidirectional audio streaming.
+
+    Args:
+        websocket: FastAPI WebSocket connection
+    """
+    await audio_ws_handler.handle_connection(websocket)
 
 
 @app.on_event("startup")

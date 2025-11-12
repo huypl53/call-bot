@@ -4,7 +4,8 @@ Chứa tất cả các hằng số được sử dụng trong hệ thống
 """
 
 # OpenAI Configuration
-OPENAI_MODEL = "gpt-realtime-mini-2025-10-06"
+# OPENAI_MODEL = "gpt-realtime-mini-2025-10-06"
+OPENAI_MODEL = "gpt-realtime-mini"
 DEFAULT_TEMPERATURE = 0.8
 DEFAULT_VOICE = "alloy"
 
@@ -22,7 +23,8 @@ LOG_EVENT_TYPES = [
     'input_audio_buffer.speech_started',
     'session.created',
     'session.updated',
-    'response.function_call_arguments.done'
+    'response.function_call_arguments.done',
+    'response.output_text.delta'
 ]
 
 SHOW_TIMING_MATH = False

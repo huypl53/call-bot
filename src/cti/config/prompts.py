@@ -42,6 +42,7 @@ SYSTEM_MESSAGE = (
     "- Khi gọi tools, dùng đúng parameter names: full_name, age, gender (male/female/other), check_in_date, check_out_date, room_type (standard/vip), special_requests"
 )
 
+SYSTEM_MESSAGE = "Trả lời câu hỏi bằng tiếng Việt."
 
 # Alternative prompts cho testing hoặc các scenarios khác
 SYSTEM_MESSAGE_CONCISE = (

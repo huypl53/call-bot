@@ -3,6 +3,7 @@ Booking API Tools
 Tools for interacting with the Booking API
 """
 
+import logging
 from typing import Any, Dict, Optional, TypedDict
 
 import httpx
@@ -10,6 +11,8 @@ import httpx
 from cti.config.settings import settings
 from cti.core.session_manager import SessionManager
 from cti.tools.base import BaseTool
+
+logger = logging.getLogger(__name__)
 
 
 class BookingInfoDict(TypedDict, total=False):
@@ -271,29 +274,29 @@ class CreateBookingTool(BaseTool):
                     "customerId": {"type": "string", "description": "ID khách hàng (tùy chọn)"},
                     "customerName": {"type": "string", "description": "Tên khách hàng (tùy chọn)"},
                     "furiganaName": {"type": "string", "description": "Tên furigana"},
-                    "customerAge": {"type": "string", "description": "Tuổi khách hàng (tùy chọn)"},
+                    "customerAge": {"type": "integer", "description": "Tuổi khách hàng (tùy chọn)"},
                     "customerGender": {"type": "string", "description": "Giới tính khách hàng (tùy chọn)"},
                     "phoneNumber": {"type": "string", "description": "Số điện thoại (tùy chọn)"},
-                    "firstContactSource": {"type": "string", "description": "Nguồn liên hệ đầu tiên (tùy chọn)"}
+                    # "firstContactSource": {"type": "string", "description": "Nguồn liên hệ đầu tiên (tùy chọn)"}
                 },
-                "required": ["source", "startTime", "serviceId", "employeeId", "furiganaName"]
+                "required": ["source", "startTime", "serviceId", "employeeId"]
             }
         }
 
     async def execute(
         self,
         session_manager: SessionManager,
-        twilioCallSid: str,
+        # twilioCallSid: str,
         startTime: str,
         serviceId: str,
         employeeId: str,
         # bookingStartTime: str,
-        furiganaName: str,
+        furiganaName: Optional[str] = None,
         source: str = 'phone',
         notes: Optional[str] = None,
         customerId: Optional[str] = None,
         customerName: Optional[str] = None,
-        customerAge: Optional[str] = None,
+        customerAge: Optional[int] = None,
         customerGender: Optional[str] = None,
         phoneNumber: Optional[str] = None,
         firstContactSource: Optional[str] = None,
@@ -304,7 +307,7 @@ class CreateBookingTool(BaseTool):
             booking_info: BookingInfoDict = {
                 "serviceId": serviceId,
                 "employeeId": employeeId,
-                # "startTime": bookingStartTime
+                "startTime": startTime
             }
             if notes:
                 booking_info["notes"] = notes
@@ -327,20 +330,22 @@ class CreateBookingTool(BaseTool):
 
             payload = {
                 "source": source,
-                "twilioCallSid": twilioCallSid,
-                "startTime": startTime,
+                "twilioCallSid": session_manager.stream_sid,
+                # "startTime": startTime,
                 "bookingInfo": booking_info,
                 "customerInfo": customer_info
             }
+            
+            logger.info(f"Payload for create booking: {payload}")
 
             async with httpx.AsyncClient() as client:
-                response = await client.put(
+                response = await client.post(
                     f"{settings.API_HOST}bookings",
                     json=payload,
                     timeout=30.0
                 )
                 response.raise_for_status()
-                data = response.json()
+                data = response.json() if response.content else None
 
             return {
                 "success": True,

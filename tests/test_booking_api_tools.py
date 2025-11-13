@@ -108,15 +108,13 @@ async def test_create_booking(session_manager):
     result = await tool.execute(
         session_manager,
         source="phone",
-        twilioCallSid="TEST_CALL_SID_123",
         startTime="2025-11-20 10:00:00",
         serviceId="41bf5171-f09c-4da4-9b7e-8d8e7f8a085d",
         employeeId="c73d2a45-b567-491f-bfa2-9343ddee0004",
-        bookingStartTime="2025-11-21 10:00:00",
         furiganaName="テスト ユーザー",
         notes="Test booking from integration test",
         customerName="Test User",
-        customerAge="28",
+        customerAge=28,
         customerGender="male"
     )
     
@@ -126,6 +124,31 @@ async def test_create_booking(session_manager):
         assert "data" in result
     else:
         assert "error" in result
+
+
+@pytest.mark.asyncio
+async def test_create_booking_with_mock_data():
+    """Test CreateBookingTool with current mock data"""
+    session_manager = SessionManager("browser_session")
+    tool = CreateBookingTool()
+    result = await tool.execute(
+        session_manager,
+        source="phone",
+        startTime="2025-11-13 08:00:00",
+        serviceId="4a6219c3-f694-425b-a288-28da5f73b6b2",
+        employeeId="c73d2a45-b567-491f-bfa2-9343ddee0004",
+        furiganaName=None,
+        customerName="Lê",
+        customerAge=20,
+        customerGender="male"
+    )
+    
+    assert "success" in result
+    assert "message" in result
+    assert result["message"] == "Tạo booking thành công"
+    # API may return empty response, so data can be None
+    assert "data" in result
+    print(result)
 
 
 @pytest.mark.asyncio

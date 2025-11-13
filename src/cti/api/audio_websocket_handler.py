@@ -5,6 +5,7 @@ Audio WebSocket Handler - Flexible handler for bidirectional audio streaming
 import asyncio
 import base64
 import json
+import uuid
 from logging import getLogger
 from typing import Optional
 
@@ -158,9 +159,11 @@ class AudioWebSocketHandler:
                                 elif event_type == "start":
                                     start_msg: StartMessage = data
                                     session_id = start_msg.get("session_id")
+                                    if not session_id:
+                                        session_id = str(uuid.uuid4())
                                     logger.info(f"Session started: {session_id}")
-                                    if session_id:
-                                        session_manager = SessionManager(session_id)
+                                    # if session_id:
+                                    session_manager = SessionManager(session_id)
 
                                 elif event_type == "text":
                                     # Handle text-to-audio conversion

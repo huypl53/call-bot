@@ -4,11 +4,20 @@ Sử dụng Pydantic để validate và load từ environment variables
 """
 
 import os
+from enum import Enum
 
 from dotenv import load_dotenv
 
 # Load .env file
 load_dotenv(override=True)
+
+
+class Language(str, Enum):
+    """Language enum for supported languages."""
+
+    VI = "vi"
+    EN = "en"
+    JP = "jp"
 
 
 class Settings:
@@ -30,6 +39,14 @@ class Settings:
         self.VOICE: str = os.getenv("VOICE", "alloy")
         self.DEBUG: bool = os.getenv("DEBUG", "false").lower() == "true"
         self.LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
+        # Language setting (vi, en, jp)
+        language_str = os.getenv("LANGUAGE", "en").lower()
+        try:
+            self.LANGUAGE: Language = Language(language_str)
+        except ValueError:
+            raise ValueError(
+                f"Invalid LANGUAGE: {language_str}. Must be one of {[lang.value for lang in Language]}"
+            )
         # API Host - ensure trailing slash
         api_host = os.getenv("API_HOST", "https://wan-subacrid-marlon.ngrok-free.dev/api/")
         self.API_HOST: str = api_host if api_host.endswith("/") else f"{api_host}/"
@@ -70,6 +87,7 @@ class Settings:
             f"PORT={self.PORT}, "
             f"TEMPERATURE={self.TEMPERATURE}, "
             f"VOICE={self.VOICE}, "
+            f"LANGUAGE={self.LANGUAGE.value}, "
             f"DEBUG={self.DEBUG})"
         )
 

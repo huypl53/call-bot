@@ -373,7 +373,7 @@ class AudioWebSocketHandler:
                 },
             },
             "instructions": SYSTEM_MESSAGE,
-            # "tools": self.tool_service.get_tool_definitions(),
+            "tools": self.tool_service.get_tool_definitions(),
             "tool_choice": "auto",
         }
         logger.info(

@@ -3,7 +3,7 @@ Booking API Tools
 Tools for interacting with the Booking API
 """
 
-from typing import Annotated, Any, Dict, Optional, TypedDict
+from typing import Any, Dict, Optional, TypedDict
 
 import httpx
 
@@ -32,23 +32,43 @@ class CustomerInfoDict(TypedDict, total=False):
 
 
 class GetBookingListTool(BaseTool):
-    """Tool để lấy danh sách bookings với phân trang và các bộ lọc tùy chọn"""
+    """Tool để lấy danh sách bookings"""
 
     @property
     def name(self) -> str:
         return "get_booking_list"
 
+    def get_definition(self) -> Dict[str, Any]:
+        return {
+            "type": "function",
+            "name": self.name,
+            "description": "Lấy danh sách bookings với phân trang và các bộ lọc tùy chọn",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "page": {"type": "integer", "description": "Số trang (mặc định: 1)"},
+                    "size": {"type": "integer", "description": "Số lượng items mỗi trang (mặc định: 5)"},
+                    "startTime": {"type": "string", "description": "Thời gian bắt đầu (format: YYYY-MM-DD HH:mm:ss)"},
+                    "endTime": {"type": "string", "description": "Thời gian kết thúc (format: YYYY-MM-DD HH:mm:ss)"},
+                    "employeeId": {"type": "string", "description": "ID của nhân viên"},
+                    "employeeName": {"type": "string", "description": "Tên nhân viên"}
+                },
+                "required": []
+            }
+        }
+
     async def execute(
         self,
         session_manager: SessionManager,
-        page: Annotated[Optional[int], "Số trang (mặc định: 1)"] = None,
-        size: Annotated[Optional[int], "Số lượng items mỗi trang (mặc định: 5)"] = None,
-        startTime: Annotated[Optional[str], "Thời gian bắt đầu (format: YYYY-MM-DD HH:mm:ss)"] = None,
-        endTime: Annotated[Optional[str], "Thời gian kết thúc (format: YYYY-MM-DD HH:mm:ss)"] = None,
-        employeeId: Annotated[Optional[str], "ID của nhân viên"] = None,
-        employeeName: Annotated[Optional[str], "Tên nhân viên"] = None,
+        page: Optional[int] = None,
+        size: Optional[int] = None,
+        startTime: Optional[str] = None,
+        endTime: Optional[str] = None,
+        employeeId: Optional[str] = None,
+        employeeName: Optional[str] = None,
+        **kwargs
     ) -> Dict[str, Any]:
-        """Lấy danh sách bookings với phân trang và các bộ lọc tùy chọn"""
+        """Execute get booking list"""
         try:
             params = {}
             if page is not None:
@@ -93,18 +113,33 @@ class GetBookingListTool(BaseTool):
 
 
 class GetBookingDetailTool(BaseTool):
-    """Tool để lấy chi tiết booking theo ID"""
+    """Tool để lấy chi tiết booking"""
 
     @property
     def name(self) -> str:
         return "get_booking_detail"
 
+    def get_definition(self) -> Dict[str, Any]:
+        return {
+            "type": "function",
+            "name": self.name,
+            "description": "Lấy chi tiết booking theo ID",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string", "description": "ID của booking"}
+                },
+                "required": ["id"]
+            }
+        }
+
     async def execute(
         self,
         session_manager: SessionManager,
-        id: Annotated[str, "ID của booking"],
+        id: str,
+        **kwargs
     ) -> Dict[str, Any]:
-        """Lấy chi tiết booking theo ID"""
+        """Execute get booking detail"""
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.get(
@@ -134,21 +169,45 @@ class GetBookingDetailTool(BaseTool):
 
 
 class CheckBookingAvailabilityTool(BaseTool):
-    """Tool để kiểm tra booking có sẵn trong khoảng thời gian"""
+    """Tool để kiểm tra booking có sẵn không"""
 
     @property
     def name(self) -> str:
         return "check_booking_availability"
 
+    def get_definition(self) -> Dict[str, Any]:
+        return {
+            "type": "function",
+            "name": self.name,
+            "description": "Kiểm tra booking có sẵn trong khoảng thời gian",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "startTime": {
+                        "type": "string",
+                        "description": "Thời gian bắt đầu (format: YYYY-MM-DD HH:mm:ss)"
+                    },
+                    "endTime": {
+                        "type": "string",
+                        "description": "Thời gian kết thúc (format: YYYY-MM-DD HH:mm:ss)"
+                    },
+                    "employeeId": {"type": "string", "description": "ID của nhân viên (tùy chọn)"},
+                    "employeeName": {"type": "string", "description": "Tên nhân viên (tùy chọn)"}
+                },
+                "required": ["startTime", "endTime"]
+            }
+        }
+
     async def execute(
         self,
         session_manager: SessionManager,
-        startTime: Annotated[str, "Thời gian bắt đầu (format: YYYY-MM-DD HH:mm:ss)"],
-        endTime: Annotated[str, "Thời gian kết thúc (format: YYYY-MM-DD HH:mm:ss)"],
-        employeeId: Annotated[Optional[str], "ID của nhân viên (tùy chọn)"] = None,
-        employeeName: Annotated[Optional[str], "Tên nhân viên (tùy chọn)"] = None,
+        startTime: str,
+        endTime: str,
+        employeeId: Optional[str] = None,
+        employeeName: Optional[str] = None,
+        **kwargs
     ) -> Dict[str, Any]:
-        """Kiểm tra booking có sẵn trong khoảng thời gian"""
+        """Execute check booking availability"""
         try:
             params = {
                 "startTime": startTime,
@@ -188,30 +247,59 @@ class CheckBookingAvailabilityTool(BaseTool):
 
 
 class CreateBookingTool(BaseTool):
-    """Tool để tạo booking mới với thông tin khách hàng và booking"""
+    """Tool để tạo booking mới"""
 
     @property
     def name(self) -> str:
         return "create_booking"
 
+    def get_definition(self) -> Dict[str, Any]:
+        return {
+            "type": "function",
+            "name": self.name,
+            "description": "Tạo booking mới với thông tin khách hàng và booking",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "source": {"type": "string", "description": "Nguồn booking (ví dụ: 'phone')"},
+                    # "twilioCallSid": {"type": "string", "description": "Twilio Call SID"},
+                    "startTime": {"type": "string", "description": "Thời gian bắt đầu (format: YYYY-MM-DD HH:mm:ss)"},
+                    "serviceId": {"type": "string", "description": "ID của service"},
+                    "employeeId": {"type": "string", "description": "ID của nhân viên"},
+                    # "bookingStartTime": {"type": "string", "description": "Thời gian bắt đầu booking (format: YYYY-MM-DD HH:mm:ss)"},
+                    "notes": {"type": "string", "description": "Ghi chú"},
+                    "customerId": {"type": "string", "description": "ID khách hàng (tùy chọn)"},
+                    "customerName": {"type": "string", "description": "Tên khách hàng (tùy chọn)"},
+                    "furiganaName": {"type": "string", "description": "Tên furigana"},
+                    "customerAge": {"type": "string", "description": "Tuổi khách hàng (tùy chọn)"},
+                    "customerGender": {"type": "string", "description": "Giới tính khách hàng (tùy chọn)"},
+                    "phoneNumber": {"type": "string", "description": "Số điện thoại (tùy chọn)"},
+                    "firstContactSource": {"type": "string", "description": "Nguồn liên hệ đầu tiên (tùy chọn)"}
+                },
+                "required": ["source", "startTime", "serviceId", "employeeId", "furiganaName"]
+            }
+        }
+
     async def execute(
         self,
         session_manager: SessionManager,
-        startTime: Annotated[str, "Thời gian bắt đầu (format: YYYY-MM-DD HH:mm:ss)"],
-        serviceId: Annotated[str, "ID của service"],
-        employeeId: Annotated[str, "ID của nhân viên"],
-        furiganaName: Annotated[str, "Tên furigana"],
-        twilioCallSid: Annotated[Optional[str], "Twilio Call SID (tùy chọn)"] = None,
-        source: Annotated[str, "Nguồn booking (ví dụ: 'phone')"] = 'phone',
-        notes: Annotated[Optional[str], "Ghi chú (tùy chọn)"] = None,
-        customerId: Annotated[Optional[str], "ID khách hàng (tùy chọn)"] = None,
-        customerName: Annotated[Optional[str], "Tên khách hàng (tùy chọn)"] = None,
-        customerAge: Annotated[Optional[str], "Tuổi khách hàng (tùy chọn)"] = None,
-        customerGender: Annotated[Optional[str], "Giới tính khách hàng (tùy chọn)"] = None,
-        phoneNumber: Annotated[Optional[str], "Số điện thoại (tùy chọn)"] = None,
-        firstContactSource: Annotated[Optional[str], "Nguồn liên hệ đầu tiên (tùy chọn)"] = None,
+        twilioCallSid: str,
+        startTime: str,
+        serviceId: str,
+        employeeId: str,
+        # bookingStartTime: str,
+        furiganaName: str,
+        source: str = 'phone',
+        notes: Optional[str] = None,
+        customerId: Optional[str] = None,
+        customerName: Optional[str] = None,
+        customerAge: Optional[str] = None,
+        customerGender: Optional[str] = None,
+        phoneNumber: Optional[str] = None,
+        firstContactSource: Optional[str] = None,
+        **kwargs
     ) -> Dict[str, Any]:
-        """Tạo booking mới với thông tin khách hàng và booking"""
+        """Execute create booking"""
         try:
             booking_info: BookingInfoDict = {
                 "serviceId": serviceId,
@@ -239,7 +327,7 @@ class CreateBookingTool(BaseTool):
 
             payload = {
                 "source": source,
-                "twilioCallSid": twilioCallSid or 'TEST_CALL_SID_123',
+                "twilioCallSid": twilioCallSid,
                 "startTime": startTime,
                 "bookingInfo": booking_info,
                 "customerInfo": customer_info
@@ -274,19 +362,35 @@ class CreateBookingTool(BaseTool):
 
 
 class UpdateBookingStatusTool(BaseTool):
-    """Tool để cập nhật trạng thái booking (ví dụ: confirmed, cancelled)"""
+    """Tool để cập nhật trạng thái booking"""
 
     @property
     def name(self) -> str:
         return "update_booking_status"
 
+    def get_definition(self) -> Dict[str, Any]:
+        return {
+            "type": "function",
+            "name": self.name,
+            "description": "Cập nhật trạng thái booking (ví dụ: confirmed, cancelled)",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string", "description": "ID của booking"},
+                    "status": {"type": "string", "description": "Trạng thái mới (ví dụ: 'confirmed', 'cancelled')"}
+                },
+                "required": ["id", "status"]
+            }
+        }
+
     async def execute(
         self,
         session_manager: SessionManager,
-        id: Annotated[str, "ID của booking"],
-        status: Annotated[str, "Trạng thái mới (ví dụ: 'confirmed', 'cancelled')"],
+        id: str,
+        status: str,
+        **kwargs
     ) -> Dict[str, Any]:
-        """Cập nhật trạng thái booking (ví dụ: confirmed, cancelled)"""
+        """Execute update booking status"""
         try:
             payload = {"status": status}
 

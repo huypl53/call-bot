@@ -56,7 +56,7 @@ class AudioWebSocketHandler:
             # Remove https:// and trailing slashes
             endpoint = settings.OPENAI_BASE_URL.replace("https://", "").rstrip("/")
             # Construct websocket URL with API version and deployment for Azure
-            deployment_name = "gpt-realtime-mini"
+            deployment_name = settings.MODEL
             websocket_base_url = (
                 f"wss://{endpoint}/openai/v1/realtime?"
                 f"api-version=2024-10-01-preview&deployment={deployment_name}"
@@ -74,7 +74,7 @@ class AudioWebSocketHandler:
             return
 
         try:
-            deployment_name = "gpt-realtime-mini"
+            deployment_name = settings.MODEL
             async with client.realtime.connect(model=deployment_name) as connection:
                 await self._initialize_session(connection)
 

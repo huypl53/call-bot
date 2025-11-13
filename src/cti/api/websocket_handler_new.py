@@ -23,6 +23,7 @@ from cti.services.tool_service import ToolService
 logger = getLogger(__name__)
 # Logger inherits level from root logger configured in app.py
 
+
 class WebSocketHandler:
     """Handle WebSocket connections between Twilio and OpenAI"""
 
@@ -47,7 +48,7 @@ class WebSocketHandler:
             # Remove https:// and trailing slashes
             endpoint = settings.OPENAI_BASE_URL.replace("https://", "").rstrip("/")
             # Construct websocket URL with API version and deployment for Azure
-            deployment_name = "gpt-realtime-mini"
+            deployment_name = settings.MODEL
             websocket_base_url = (
                 f"wss://{endpoint}/openai/v1/realtime?"
                 f"api-version=2024-10-01-preview&deployment={deployment_name}"
@@ -65,7 +66,7 @@ class WebSocketHandler:
             return
         try:
             # Use deployment_name for Azure OpenAI, not full model name
-            deployment_name = "gpt-realtime-mini"
+            deployment_name = settings.MODEL
             async with client.realtime.connect(model=deployment_name) as connection:
                 await self._initialize_session(connection)
 
@@ -76,6 +77,12 @@ class WebSocketHandler:
                 mark_queue = []
                 response_start_timestamp_twilio = None
                 session_manager: Optional[SessionManager] = None
+                last_interruption_time = 0
+                interruption_cooldown_ms = (
+                    500  # 1 second cooldown between interruptions
+                )
+                is_response_active = False
+                current_response_id: Optional[str] = None
 
                 async def receive_from_twilio():
                     """Receive audio from Twilio and send to OpenAI"""
@@ -84,32 +91,45 @@ class WebSocketHandler:
                     try:
                         async for message in websocket.iter_text():
                             try:
-                                data: dict = json.loads(message)
+                                # Parse JSON message
+                                try:
+                                    data: dict = json.loads(message)
+                                except json.JSONDecodeError as json_err:
+                                    logger.error(
+                                        f"Invalid JSON received: {str(json_err)}",
+                                        extra={"handler": "file"},
+                                    )
+                                    continue
+
                                 event_type = data.get("event")
 
                                 if event_type == "connected":
                                     logger.info(f"Connected to Twilio: {data}")
-                                elif "start" in data and data.get("start") == "connected":
+                                elif (
+                                    "start" in data and data.get("start") == "connected"
+                                ):
                                     logger.info(f"Connected to Twilio: {data}")
 
                                 elif event_type == "media":
                                     media_data = data.get("media", {})
                                     timestamp = media_data.get("timestamp")
-                                    payload = media_data.get("payload")
+                                    payload: str = media_data.get("payload")
 
                                     if timestamp is not None:
                                         latest_media_timestamp = int(timestamp)
                                     if payload:
                                         # Decode base64 and append to OpenAI input buffer
-                                        audio_data = base64.b64decode(payload)
+                                        # audio_data = base64.b64decode(payload)
                                         await connection.input_audio_buffer.append(
-                                            audio=audio_data
+                                            audio=payload
                                         )
 
                                 elif event_type == "start":
                                     start_data = data.get("start", {})
                                     stream_sid = start_data.get("streamSid")
-                                    logger.info(f"Incoming stream has started: {stream_sid}")
+                                    logger.info(
+                                        f"Incoming stream has started: {stream_sid}"
+                                    )
                                     if stream_sid:
                                         session_manager = SessionManager(stream_sid)
 
@@ -120,10 +140,36 @@ class WebSocketHandler:
                                         mark_queue.pop(0)
 
                             except (KeyError, ValueError, TypeError) as e:
-                                logger.error(f"Error parsing message: {e}", extra={"handler": "file"})
-                                
+                                # Safely convert exception to string, handling bytes if present
+                                try:
+                                    error_msg = str(e)
+                                    # Ensure error message is JSON-serializable
+                                    error_msg = error_msg.encode(
+                                        "utf-8", errors="replace"
+                                    ).decode("utf-8")
+                                except Exception:
+                                    error_msg = "Unknown error occurred"
+
+                                logger.error(
+                                    f"Error parsing message: {error_msg}",
+                                    extra={"handler": "file"},
+                                )
+
                             except Exception as e:
-                                logger.error(f"Error in receive_from_twilio: {e}", extra={"handler": "file"})
+                                # Safely convert exception to string, handling bytes if present
+                                try:
+                                    error_msg = str(e)
+                                    # Ensure error message is JSON-serializable
+                                    error_msg = error_msg.encode(
+                                        "utf-8", errors="replace"
+                                    ).decode("utf-8")
+                                except Exception:
+                                    error_msg = "Unknown error occurred"
+
+                                logger.error(
+                                    f"Error in receive_from_twilio: {error_msg}",
+                                    extra={"handler": "file"},
+                                )
 
                     except WebSocketDisconnect:
                         logger.info("Client disconnected")
@@ -132,7 +178,7 @@ class WebSocketHandler:
 
                 async def send_to_twilio():
                     """Receive events from OpenAI and send audio to Twilio"""
-                    nonlocal last_assistant_item, response_start_timestamp_twilio
+                    nonlocal last_assistant_item, response_start_timestamp_twilio, last_interruption_time, is_response_active, current_response_id
 
                     try:
                         async for event in connection:
@@ -146,6 +192,25 @@ class WebSocketHandler:
                                     f"Received event: {event.type}: {event.model_dump_json()}",
                                     extra={"handler": "file"},
                                 )
+
+                            # Track response state
+                            if event.type == "response.created":
+                                is_response_active = True
+                                if hasattr(event, "response_id"):
+                                    current_response_id = event.response_id
+                                logger.info(
+                                    "Response started", extra={"handler": "file"}
+                                )
+                            elif event.type == "response.done":
+                                is_response_active = False
+                                current_response_id = None
+                                logger.info("Response done detected")
+                            elif event.type == "response.cancelled":
+                                is_response_active = False
+                                current_response_id = None
+                                logger.info("Response cancelled")
+                                # Clear mark queue on cancellation
+                                mark_queue.clear()
 
                             # Handle function call
                             if event.type == "response.function_call_arguments.done":
@@ -175,28 +240,66 @@ class WebSocketHandler:
                                     and event.item_id
                                     and event.item_id != last_assistant_item
                                 ):
-                                    response_start_timestamp_twilio = latest_media_timestamp
+                                    response_start_timestamp_twilio = (
+                                        latest_media_timestamp
+                                    )
                                     last_assistant_item = event.item_id
 
                                 await self._send_mark(websocket, stream_sid, mark_queue)
 
-                            # Handle interruption
+                            # Handle interruption - OpenAI will handle it automatically, but we track it
                             if event.type == "input_audio_buffer.speech_started":
-                                logger.info("Speech started detected")
-                                if last_assistant_item:
-                                    logger.info(
-                                        f"Interrupting response with id: {last_assistant_item}"
-                                    )
-                                    await self._handle_speech_started(
-                                        connection,
-                                        websocket,
-                                        stream_sid,
-                                        latest_media_timestamp,
-                                        response_start_timestamp_twilio,
-                                        last_assistant_item,
-                                        mark_queue,
+                                current_time = latest_media_timestamp
+                                time_since_last_interruption = (
+                                    current_time - last_interruption_time
+                                )
+
+                                # Only log if cooldown period has passed
+                                if time_since_last_interruption >= interruption_cooldown_ms:
+                                    logger.info("Speech started detected", extra={"handler": "file"})
+                                    if is_response_active and last_assistant_item:
+                                        logger.info(
+                                            f"User interrupting active response with id: {last_assistant_item}",
+                                            extra={"handler": "file"}
+                                        )
+                                        last_interruption_time = current_time
+                                        # Cancel the current response if it's still active
+                                        if current_response_id:
+                                            try:
+                                                await connection.response.cancel()
+                                            except Exception as e:
+                                                logger.warning(f"Failed to cancel response: {e}", extra={"handler": "file"})
+                                        await self._handle_speech_started(
+                                            connection,
+                                            websocket,
+                                            stream_sid,
+                                            latest_media_timestamp,
+                                            response_start_timestamp_twilio,
+                                            last_assistant_item,
+                                            mark_queue,
+                                        )
+                                else:
+                                    logger.debug(
+                                        f"Ignoring speech_started event (cooldown: {interruption_cooldown_ms - time_since_last_interruption}ms remaining)",
+                                        extra={"handler": "file"}
                                     )
 
+                                # logger.info(
+                                #     "Speech started detected", extra={"handler": "file"}
+                                # )
+                                # if last_assistant_item:
+                                #     print(
+                                #         f"Interrupting response with id: {last_assistant_item}"
+                                #     )
+                                #     await self._handle_speech_started(
+                                #         connection,
+                                #         websocket,
+                                #         stream_sid,
+                                #         latest_media_timestamp,
+                                #         response_start_timestamp_twilio,
+                                #         last_assistant_item,
+                                #         mark_queue,
+                                #     )
                     except Exception as e:
                         logger.info(f"Error in send_to_twilio: {e}")
 
@@ -218,12 +321,19 @@ class WebSocketHandler:
         """Initialize OpenAI session with tools"""
         session_config: session_update_event_param.Session = {
             "type": "realtime",
-            "model": "gpt-realtime",
+            "model": settings.MODEL,
             "output_modalities": ["audio"],
             "audio": {
                 "input": {
                     "format": {"type": "audio/pcmu"},
-                    "turn_detection": {"type": "server_vad"},
+                    "turn_detection": {
+                        "type": "server_vad",
+                        "threshold": 0.5,
+                        "prefix_padding_ms": 300,
+                        "silence_duration_ms": 200,
+                        "create_response": True,
+                        "interrupt_response": True,  # Enable automatic interruption
+                    },
                 },
                 "output": {"format": {"type": "audio/pcmu"}, "voice": settings.VOICE},
             },
@@ -311,14 +421,28 @@ class WebSocketHandler:
         mark_queue: list,
     ):
         """Handle speech interruption"""
-        if mark_queue and response_start_timestamp_twilio is not None and last_assistant_item:
+        if (
+            mark_queue
+            and response_start_timestamp_twilio is not None
+        ):
             elapsed_time = latest_media_timestamp - response_start_timestamp_twilio
 
-            await connection.conversation.item.truncate(
-                item_id=last_assistant_item,
-                content_index=0,
-                audio_end_ms=elapsed_time,
-            )
+            # Only truncate if elapsed_time is positive and reasonable
+            if elapsed_time > 0:
+                try:
+                    await connection.conversation.item.truncate(
+                        item_id=last_assistant_item,
+                        content_index=0,
+                        audio_end_ms=elapsed_time,
+                    )
+                except Exception as e:
+                    # Handle case where audio is shorter than elapsed_time
+                    # This can happen if timestamps are inaccurate or audio finished early
+                    logger.warning(
+                        f"Failed to truncate audio at {elapsed_time}ms: {e}",
+                        extra={"handler": "file"},
+                    )
+                    # Continue anyway - the interruption will still be handled
 
             await websocket.send_json({"event": "clear", "streamSid": stream_sid})
 

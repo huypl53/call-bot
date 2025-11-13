@@ -3,7 +3,7 @@ Employee API Tools
 Tools for interacting with the Employee API
 """
 
-from typing import Any, Dict, Optional
+from typing import Annotated, Any, Dict, Optional
 
 import httpx
 
@@ -13,35 +13,20 @@ from cti.tools.base import BaseTool
 
 
 class GetEmployeeListTool(BaseTool):
-    """Tool để lấy danh sách employees"""
+    """Tool để lấy danh sách employees với phân trang"""
 
     @property
     def name(self) -> str:
         return "get_employee_list"
 
-    def get_definition(self) -> Dict[str, Any]:
-        return {
-            "type": "function",
-            "name": self.name,
-            "description": "Lấy danh sách employees với phân trang",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "page": {"type": "integer", "description": "Số trang (mặc định: 1)"},
-                    "size": {"type": "integer", "description": "Số lượng items mỗi trang (mặc định: 5)"}
-                },
-                "required": []
-            }
-        }
-
     async def execute(
         self,
         session_manager: SessionManager,
-        page: Optional[int] = None,
-        size: Optional[int] = None,
+        page: Annotated[Optional[int], "Số trang (mặc định: 1)"] = None,
+        size: Annotated[Optional[int], "Số lượng items mỗi trang (mặc định: 5)"] = None,
         **kwargs
     ) -> Dict[str, Any]:
-        """Execute get employee list"""
+        """Lấy danh sách employees với phân trang"""
         try:
             params = {}
             if page is not None:

@@ -10,26 +10,14 @@ from cti.tools.base import BaseTool
 
 
 class SummaryGetterTool(BaseTool):
-    """Tool để lấy tổng hợp thông tin đặt phòng"""
+    """Tool để lấy tổng hợp thông tin đặt phòng đã thu thập được từ khách. Dùng để kiểm tra thông tin nào đã có, thông tin nào còn thiếu."""
 
     @property
     def name(self) -> str:
         return "get_booking_summary"
 
-    def get_definition(self) -> Dict[str, Any]:
-        return {
-            "type": "function",
-            "name": self.name,
-            "description": "Lấy tổng hợp thông tin đặt phòng đã thu thập được từ khách. Dùng để kiểm tra thông tin nào đã có, thông tin nào còn thiếu.",
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "required": []
-            }
-        }
-
     async def execute(self, session_manager: SessionManager, **kwargs) -> Dict[str, Any]:
-        """Execute get booking summary"""
+        """Lấy tổng hợp thông tin đặt phòng đã thu thập được từ khách. Dùng để kiểm tra thông tin nào đã có, thông tin nào còn thiếu."""
         summary = session_manager.get_booking_summary()
         booking_info = summary["booking_info"]
         status = summary["completion_status"]

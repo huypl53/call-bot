@@ -3,7 +3,7 @@ Room Availability Checker Tool
 """
 
 import random
-from typing import Any, Dict
+from typing import Annotated, Any, Dict
 
 from cti.config.constants import (
     MAX_AVAILABLE_ROOMS,
@@ -16,47 +16,21 @@ from cti.tools.base import BaseTool
 
 
 class RoomCheckerTool(BaseTool):
-    """Tool để kiểm tra phòng trống (mock data)"""
+    """Tool để kiểm tra phòng trống trong khoảng thời gian. Trả về thông tin phòng có sẵn hay không."""
 
     @property
     def name(self) -> str:
         return "check_room_availability"
 
-    def get_definition(self) -> Dict[str, Any]:
-        return {
-            "type": "function",
-            "name": self.name,
-            "description": "Kiểm tra phòng trống trong khoảng thời gian. Trả về thông tin phòng có sẵn hay không.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "check_in_date": {
-                        "type": "string",
-                        "description": "Ngày nhận phòng (định dạng: YYYY-MM-DD hoặc DD/MM/YYYY)"
-                    },
-                    "check_out_date": {
-                        "type": "string",
-                        "description": "Ngày trả phòng (định dạng: YYYY-MM-DD hoặc DD/MM/YYYY)"
-                    },
-                    "room_type": {
-                        "type": "string",
-                        "enum": ["standard", "vip"],
-                        "description": "Loại phòng: 'standard' (phòng thường) hoặc 'vip' (phòng VIP)"
-                    }
-                },
-                "required": ["check_in_date", "check_out_date", "room_type"]
-            }
-        }
-
     async def execute(
         self,
         session_manager: SessionManager,
-        check_in_date: str,
-        check_out_date: str,
-        room_type: str,
+        check_in_date: Annotated[str, "Ngày nhận phòng (định dạng: YYYY-MM-DD hoặc DD/MM/YYYY)"],
+        check_out_date: Annotated[str, "Ngày trả phòng (định dạng: YYYY-MM-DD hoặc DD/MM/YYYY)"],
+        room_type: Annotated[str, "Loại phòng: 'standard' (phòng thường) hoặc 'vip' (phòng VIP)"],
         **kwargs
     ) -> Dict[str, Any]:
-        """Execute room availability check"""
+        """Kiểm tra phòng trống trong khoảng thời gian. Trả về thông tin phòng có sẵn hay không."""
         # Random availability
         is_available = random.random() < ROOM_AVAILABILITY_CHANCE
 

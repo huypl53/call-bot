@@ -3,7 +3,7 @@ Service API Tools
 Tools for interacting with the Service API
 """
 
-from typing import Any, Dict, Optional
+from typing import Annotated, Any, Dict, Optional
 
 import httpx
 
@@ -13,35 +13,20 @@ from cti.tools.base import BaseTool
 
 
 class GetServiceListTool(BaseTool):
-    """Tool để lấy danh sách services"""
+    """Tool để lấy danh sách services với phân trang"""
 
     @property
     def name(self) -> str:
         return "get_service_list"
 
-    def get_definition(self) -> Dict[str, Any]:
-        return {
-            "type": "function",
-            "name": self.name,
-            "description": "Lấy danh sách services với phân trang",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "page": {"type": "integer", "description": "Số trang (mặc định: 1)"},
-                    "size": {"type": "integer", "description": "Số lượng items mỗi trang (mặc định: 5)"}
-                },
-                "required": []
-            }
-        }
-
     async def execute(
         self,
         session_manager: SessionManager,
-        page: Optional[int] = None,
-        size: Optional[int] = None,
+        page: Annotated[Optional[int], "Số trang (mặc định: 1)"] = None,
+        size: Annotated[Optional[int], "Số lượng items mỗi trang (mặc định: 5)"] = None,
         **kwargs
     ) -> Dict[str, Any]:
-        """Execute get service list"""
+        """Lấy danh sách services với phân trang"""
         try:
             params = {}
             if page is not None:

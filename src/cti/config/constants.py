@@ -87,28 +87,93 @@ SESSIONS_DIRECTORY = "sessions"
 
 # Booking Fields
 BOOKING_REQUIRED_FIELDS = 6  # Không bao gồm special_requests
-BOOKING_FIELDS = {
-    "full_name": "Họ tên",
-    "age": "Tuổi",
-    "gender": "Giới tính",
-    "check_in_date": "Ngày đến",
-    "check_out_date": "Ngày đi",
-    "room_type": "Loại phòng",
-    "special_requests": "Yêu cầu đặc biệt"
+
+# Language-specific booking field translations
+BOOKING_FIELDS_TRANSLATIONS = {
+    Language.VI: {
+        "full_name": "Họ tên",
+        "age": "Tuổi",
+        "gender": "Giới tính",
+        "check_in_date": "Ngày đến",
+        "check_out_date": "Ngày đi",
+        "room_type": "Loại phòng",
+        "special_requests": "Yêu cầu đặc biệt"
+    },
+    Language.EN: {
+        "full_name": "Full Name",
+        "age": "Age",
+        "gender": "Gender",
+        "check_in_date": "Check-in Date",
+        "check_out_date": "Check-out Date",
+        "room_type": "Room Type",
+        "special_requests": "Special Requests"
+    },
+    Language.JP: {
+        "full_name": "氏名",
+        "age": "年齢",
+        "gender": "性別",
+        "check_in_date": "チェックイン日",
+        "check_out_date": "チェックアウト日",
+        "room_type": "部屋タイプ",
+        "special_requests": "特別なリクエスト"
+    },
 }
 
-# Gender Options
-GENDER_OPTIONS = {
-    "male": "Nam",
-    "female": "Nữ",
-    "other": "Khác"
+# Language-specific gender option translations
+GENDER_OPTIONS_TRANSLATIONS = {
+    Language.VI: {
+        "male": "Nam",
+        "female": "Nữ",
+        "other": "Khác"
+    },
+    Language.EN: {
+        "male": "Male",
+        "female": "Female",
+        "other": "Other"
+    },
+    Language.JP: {
+        "male": "男性",
+        "female": "女性",
+        "other": "その他"
+    },
 }
 
-# Room Type Options
-ROOM_TYPE_OPTIONS = {
-    "standard": "Phòng thường",
-    "vip": "Phòng VIP"
+# Language-specific room type option translations
+ROOM_TYPE_OPTIONS_TRANSLATIONS = {
+    Language.VI: {
+        "standard": "Phòng thường",
+        "vip": "Phòng VIP"
+    },
+    Language.EN: {
+        "standard": "Standard Room",
+        "vip": "VIP Room"
+    },
+    Language.JP: {
+        "standard": "スタンダードルーム",
+        "vip": "VIPルーム"
+    },
 }
+
+
+def _get_booking_fields() -> dict[str, str]:
+    """Get booking fields translation based on current language setting."""
+    return BOOKING_FIELDS_TRANSLATIONS.get(settings.LANGUAGE, BOOKING_FIELDS_TRANSLATIONS[Language.EN])
+
+
+def _get_gender_options() -> dict[str, str]:
+    """Get gender options translation based on current language setting."""
+    return GENDER_OPTIONS_TRANSLATIONS.get(settings.LANGUAGE, GENDER_OPTIONS_TRANSLATIONS[Language.EN])
+
+
+def _get_room_type_options() -> dict[str, str]:
+    """Get room type options translation based on current language setting."""
+    return ROOM_TYPE_OPTIONS_TRANSLATIONS.get(settings.LANGUAGE, ROOM_TYPE_OPTIONS_TRANSLATIONS[Language.EN])
+
+
+# Exported constants (language-specific)
+BOOKING_FIELDS = _get_booking_fields()
+GENDER_OPTIONS = _get_gender_options()
+ROOM_TYPE_OPTIONS = _get_room_type_options()
 
 # Room Availability (Mock)
 ROOM_AVAILABILITY_CHANCE = 0.7  # 70% chance of having rooms

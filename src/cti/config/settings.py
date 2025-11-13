@@ -9,7 +9,7 @@ from enum import Enum
 from dotenv import load_dotenv
 
 # Load .env file
-load_dotenv(override=True)
+load_dotenv(os.getenv("ENV_FILE", ".env"), override=True)
 
 
 class Language(str, Enum):

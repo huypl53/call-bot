@@ -65,7 +65,6 @@ class WebSocketHandler:
             )
             return
         try:
-            # Use deployment_name for Azure OpenAI, not full model name
             deployment_name = settings.MODEL
             async with client.realtime.connect(model=deployment_name) as connection:
                 await self._initialize_session(connection)
@@ -79,14 +78,14 @@ class WebSocketHandler:
                 session_manager: Optional[SessionManager] = None
                 last_interruption_time = 0
                 interruption_cooldown_ms = (
-                    500  # 1 second cooldown between interruptions
+                    1000  # 1 second cooldown between interruptions
                 )
                 is_response_active = False
                 current_response_id: Optional[str] = None
 
                 async def receive_from_twilio():
                     """Receive audio from Twilio and send to OpenAI"""
-                    nonlocal stream_sid, latest_media_timestamp, session_manager
+                    nonlocal stream_sid, latest_media_timestamp, session_manager, is_response_active, current_response_id
 
                     try:
                         async for message in websocket.iter_text():
@@ -99,6 +98,7 @@ class WebSocketHandler:
                                         f"Invalid JSON received: {str(json_err)}",
                                         extra={"handler": "file"},
                                     )
+                                    # Twilio doesn't expect error responses, so we just log and continue
                                     continue
 
                                 event_type = data.get("event")
@@ -154,6 +154,7 @@ class WebSocketHandler:
                                     f"Error parsing message: {error_msg}",
                                     extra={"handler": "file"},
                                 )
+                                # Twilio doesn't expect error responses, so we just log and continue
 
                             except Exception as e:
                                 # Safely convert exception to string, handling bytes if present
@@ -170,6 +171,7 @@ class WebSocketHandler:
                                     f"Error in receive_from_twilio: {error_msg}",
                                     extra={"handler": "file"},
                                 )
+                                # Twilio doesn't expect error responses, so we just log and continue
 
                     except WebSocketDisconnect:
                         logger.info("Client disconnected")
@@ -178,7 +180,7 @@ class WebSocketHandler:
 
                 async def send_to_twilio():
                     """Receive events from OpenAI and send audio to Twilio"""
-                    nonlocal last_assistant_item, response_start_timestamp_twilio, last_interruption_time, is_response_active, current_response_id
+                    nonlocal last_assistant_item, response_start_timestamp_twilio, last_interruption_time, is_response_active, current_response_id, latest_media_timestamp
 
                     try:
                         async for event in connection:
@@ -204,11 +206,18 @@ class WebSocketHandler:
                             elif event.type == "response.done":
                                 is_response_active = False
                                 current_response_id = None
-                                logger.info("Response done detected")
+                                logger.info(
+                                    "Response done detected", extra={"handler": "file"}
+                                )
+                                # await websocket.send_json(
+                                #     {"event": "clear", "streamSid": stream_sid}
+                                # )
                             elif event.type == "response.cancelled":
                                 is_response_active = False
                                 current_response_id = None
-                                logger.info("Response cancelled")
+                                logger.info(
+                                    "Response cancelled", extra={"handler": "file"}
+                                )
                                 # Clear mark queue on cancellation
                                 mark_queue.clear()
 
@@ -249,59 +258,39 @@ class WebSocketHandler:
 
                             # Handle interruption - OpenAI will handle it automatically, but we track it
                             if event.type == "input_audio_buffer.speech_started":
-                                current_time = latest_media_timestamp
-                                time_since_last_interruption = (
-                                    current_time - last_interruption_time
+                                logger.info(
+                                    "Speech started detected",
+                                    extra={"handler": "file"},
                                 )
-
-                                # Only log if cooldown period has passed
-                                if time_since_last_interruption >= interruption_cooldown_ms:
-                                    logger.info("Speech started detected", extra={"handler": "file"})
-                                    if is_response_active and last_assistant_item:
-                                        logger.info(
-                                            f"User interrupting active response with id: {last_assistant_item}",
-                                            extra={"handler": "file"}
-                                        )
-                                        last_interruption_time = current_time
-                                        # Cancel the current response if it's still active
-                                        if current_response_id:
-                                            try:
-                                                await connection.response.cancel()
-                                            except Exception as e:
-                                                logger.warning(f"Failed to cancel response: {e}", extra={"handler": "file"})
-                                        await self._handle_speech_started(
-                                            connection,
-                                            websocket,
-                                            stream_sid,
-                                            latest_media_timestamp,
-                                            response_start_timestamp_twilio,
-                                            last_assistant_item,
-                                            mark_queue,
-                                        )
-                                else:
-                                    logger.debug(
-                                        f"Ignoring speech_started event (cooldown: {interruption_cooldown_ms - time_since_last_interruption}ms remaining)",
-                                        extra={"handler": "file"}
+                                if is_response_active and last_assistant_item:
+                                    logger.info(
+                                        f"User interrupting active response with id: {last_assistant_item}",
+                                        extra={"handler": "file"},
                                     )
-
-                                # logger.info(
-                                #     "Speech started detected", extra={"handler": "file"}
-                                # )
-                                # if last_assistant_item:
-                                #     print(
-                                #         f"Interrupting response with id: {last_assistant_item}"
-                                #     )
-                                #     await self._handle_speech_started(
-                                #         connection,
-                                #         websocket,
-                                #         stream_sid,
-                                #         latest_media_timestamp,
-                                #         response_start_timestamp_twilio,
-                                #         last_assistant_item,
-                                #         mark_queue,
-                                #     )
+                                    if current_response_id:
+                                        try:
+                                            await connection.response.cancel()
+                                        except Exception as e:
+                                            logger.warning(
+                                                f"Failed to cancel response: {e}",
+                                                extra={"handler": "file"},
+                                            )
+                                    await self._handle_speech_started(
+                                        connection,
+                                        websocket,
+                                        stream_sid,
+                                        latest_media_timestamp,
+                                        response_start_timestamp_twilio,
+                                        last_assistant_item,
+                                        mark_queue,
+                                    )
                     except Exception as e:
-                        logger.info(f"Error in send_to_twilio: {e}")
+                        logger.error(
+                            f"Error in send_to_twilio: {e}", extra={"handler": "file"}
+                        )
+                        import traceback
+
+                        traceback.print_exc()
 
                 await asyncio.gather(receive_from_twilio(), send_to_twilio())
 
@@ -421,10 +410,7 @@ class WebSocketHandler:
         mark_queue: list,
     ):
         """Handle speech interruption"""
-        if (
-            mark_queue
-            and response_start_timestamp_twilio is not None
-        ):
+        if response_start_timestamp_twilio is not None and last_assistant_item:
             elapsed_time = latest_media_timestamp - response_start_timestamp_twilio
 
             # Only truncate if elapsed_time is positive and reasonable
@@ -444,6 +430,9 @@ class WebSocketHandler:
                     )
                     # Continue anyway - the interruption will still be handled
 
+        # Send clear event to Twilio to stop playback
+        if stream_sid:
             await websocket.send_json({"event": "clear", "streamSid": stream_sid})
 
-            mark_queue.clear()
+        # Clear mark queue on interruption
+        mark_queue.clear()

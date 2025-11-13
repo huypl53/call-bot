@@ -336,7 +336,7 @@ class CreateBookingTool(BaseTool):
                 "customerInfo": customer_info
             }
             
-            logger.info(f"Payload for create booking: {payload}")
+            # logger.info(f"Payload for create booking: {payload}")
 
             async with httpx.AsyncClient() as client:
                 response = await client.post(

@@ -326,7 +326,7 @@ class WebSocketHandler:
                 },
                 "output": {"format": {"type": "audio/pcmu"}, "voice": settings.VOICE},
             },
-            "instructions": SYSTEM_MESSAGE,
+            "instructions": str(SYSTEM_MESSAGE),
             "tools": self.tool_service.get_tool_definitions(),
             "tool_choice": "auto",
         }

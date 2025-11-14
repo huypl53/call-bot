@@ -406,7 +406,7 @@ class AudioWebSocketClient {
             console.log('[HANDLE] Response done');
             this.isAssistantSpeaking = false;
             this.log('Response complete', 'success');
-            this.finishAudioPlayback();
+            // this.finishAudioPlayback();
         } else if (eventType === 'response.cancelled') {
             console.log('[HANDLE] Response cancelled');
             this.isAssistantSpeaking = false;

@@ -257,7 +257,7 @@ class AudioWebSocketHandler:
                                 is_response_active = False
                                 current_response_id = None
                                 logger.info("Response done detected")
-                                await websocket.send_json({"event": "response.done"})
+                                # await websocket.send_json({"event": "response.done"})
                             elif event.type == "response.cancelled":
                                 is_response_active = False
                                 current_response_id = None
@@ -375,7 +375,7 @@ class AudioWebSocketHandler:
                     },
                 },
             },
-            "instructions": SYSTEM_MESSAGE,
+            "instructions": str(SYSTEM_MESSAGE),
             "tools": self.tool_service.get_tool_definitions(),
             "tool_choice": "auto",
         }

@@ -3,6 +3,8 @@ System Prompts cho KIAI Assistant
 Tách riêng để dễ maintain và có thể versioning
 """
 
+from datetime import datetime
+
 from cti.config.settings import Language, settings
 
 # Language-specific system messages
@@ -192,9 +194,76 @@ def _get_system_message() -> str:
     return SYSTEM_MESSAGES.get(settings.LANGUAGE, SYSTEM_MESSAGES[Language.EN])
 
 
-# Exported system message (language-specific)
-SYSTEM_MESSAGE = _get_system_message()
-# SYSTEM_MESSAGE = "Bạn là KIAI assistant, trợ lý ảo thông minh hỗ trợ đặt lịch dịch vụ. Bạn LUÔN LUÔN nói tiếng Việt."
+class SystemMessage:
+    """Class that provides system message with current date/time appended."""
+
+    @classmethod
+    def _get_base_message(cls) -> str:
+        """Get base system message based on current language setting."""
+        return _get_system_message()
+
+    @classmethod
+    def _get_datetime_suffix(cls) -> str:
+        """Get datetime suffix to append to system message."""
+        now = datetime.now()
+        date_str = now.strftime("%Y-%m-%d")
+        time_str = now.strftime("%H:%M:%S")
+        datetime_str = f"{date_str} {time_str}"
+        
+        # Get language-specific datetime instruction
+        lang = settings.LANGUAGE
+        if lang == Language.VI:
+            return (
+                f"\n\nTHÔNG TIN QUAN TRỌNG VỀ THỜI GIAN:\n"
+                f"- Ngày giờ hiện tại (khi hệ thống này được khởi tạo) là: {datetime_str}\n"
+                f"- Bạn PHẢI sử dụng ngày giờ này ({datetime_str}) làm ngày giờ hiện tại trong mọi cuộc trò chuyện.\n"
+                f"- Khi khách hỏi về ngày hôm nay, bạn phải trả lời dựa trên ngày {date_str}.\n"
+                f"- Khi tính toán thời gian, bạn phải dựa trên thời điểm {datetime_str} làm mốc thời gian hiện tại."
+            )
+        elif lang == Language.JP:
+            return (
+                f"\n\n時間に関する重要な情報:\n"
+                f"- 現在の日時（このシステムが初期化された時点）は: {datetime_str} です\n"
+                f"- あなたは会話中、常にこの日時（{datetime_str}）を現在の日時として使用する必要があります。\n"
+                f"- お客様が今日の日付について尋ねた場合、{date_str} に基づいて回答する必要があります。\n"
+                f"- 時間を計算する際は、{datetime_str} を現在の時刻の基準として使用する必要があります。"
+            )
+        else:  # Language.EN
+            return (
+                f"\n\nIMPORTANT TIME INFORMATION:\n"
+                f"- The current date and time (when this system was initialized) is: {datetime_str}\n"
+                f"- You MUST use this date and time ({datetime_str}) as the current date and time in all conversations.\n"
+                f"- When the customer asks about today's date, you must answer based on {date_str}.\n"
+                f"- When calculating time, you must use {datetime_str} as the reference point for the current time."
+            )
+
+    @classmethod
+    def get_system_message(cls) -> str:
+        """Get system message with current date/time appended."""
+        base_message = cls._get_base_message()
+        datetime_suffix = cls._get_datetime_suffix()
+        return base_message + datetime_suffix
+
+
+# Create a property-like object that returns the system message when accessed
+class SystemMessageProperty:
+    """Property-like object that returns system message with current date/time when accessed."""
+
+    def __str__(self) -> str:
+        """Return system message as string."""
+        return SystemMessage.get_system_message()
+
+    def __repr__(self) -> str:
+        """Return system message as string representation."""
+        return SystemMessage.get_system_message()
+
+    def __format__(self, format_spec: str) -> str:
+        """Support f-string formatting."""
+        return format(str(self), format_spec)
+
+
+# Exported system message (language-specific) - now a static property
+SYSTEM_MESSAGE = SystemMessageProperty()
 
 # Alternative prompts cho testing hoặc các scenarios khác
 SYSTEM_MESSAGE_CONCISE = (

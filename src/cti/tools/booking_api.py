@@ -8,11 +8,62 @@ from typing import Any, Dict, Optional, TypedDict
 
 import httpx
 
-from cti.config.settings import settings
+from cti.config.settings import Language, settings
 from cti.core.session_manager import SessionManager
+from cti.tools.api_logger import logged_request
 from cti.tools.base import BaseTool
 
 logger = logging.getLogger(__name__)
+
+# Language-specific booking API messages
+BOOKING_MESSAGES = {
+    Language.VI: {
+        "get_list_success": "Lấy danh sách bookings thành công",
+        "get_list_error": "Lỗi khi lấy danh sách bookings: {error}",
+        "get_detail_success": "Lấy chi tiết booking thành công",
+        "get_detail_error": "Lỗi khi lấy chi tiết booking: {error}",
+        "check_availability_success": "Kiểm tra booking availability thành công",
+        "check_availability_error": "Lỗi khi kiểm tra booking availability: {error}",
+        "create_success": "Tạo booking thành công",
+        "create_error": "Lỗi khi tạo booking: {error}",
+        "update_status_success": "Cập nhật trạng thái booking thành công: {status}",
+        "update_status_error": "Lỗi khi cập nhật trạng thái booking: {error}",
+    },
+    Language.EN: {
+        "get_list_success": "Successfully retrieved booking list",
+        "get_list_error": "Error retrieving booking list: {error}",
+        "get_detail_success": "Successfully retrieved booking details",
+        "get_detail_error": "Error retrieving booking details: {error}",
+        "check_availability_success": "Successfully checked booking availability",
+        "check_availability_error": "Error checking booking availability: {error}",
+        "create_success": "Successfully created booking",
+        "create_error": "Error creating booking: {error}",
+        "update_status_success": "Successfully updated booking status: {status}",
+        "update_status_error": "Error updating booking status: {error}",
+    },
+    Language.JP: {
+        "get_list_success": "予約一覧の取得に成功しました",
+        "get_list_error": "予約一覧の取得中にエラーが発生しました: {error}",
+        "get_detail_success": "予約詳細の取得に成功しました",
+        "get_detail_error": "予約詳細の取得中にエラーが発生しました: {error}",
+        "check_availability_success": "予約の空き状況確認に成功しました",
+        "check_availability_error": "予約の空き状況確認中にエラーが発生しました: {error}",
+        "create_success": "予約の作成に成功しました",
+        "create_error": "予約の作成中にエラーが発生しました: {error}",
+        "update_status_success": "予約ステータスの更新に成功しました: {status}",
+        "update_status_error": "予約ステータスの更新中にエラーが発生しました: {error}",
+    },
+}
+
+
+def _get_booking_message(key: str, **kwargs) -> str:
+    """Get booking message based on current language setting."""
+    messages = BOOKING_MESSAGES.get(settings.LANGUAGE, BOOKING_MESSAGES[Language.EN])
+    message = messages.get(key, "")
+    if not message:
+        # Fallback to English if key not found
+        message = BOOKING_MESSAGES[Language.EN].get(key, "")
+    return message.format(**kwargs) if kwargs else message
 
 
 class BookingInfoDict(TypedDict, total=False):
@@ -88,8 +139,10 @@ class GetBookingListTool(BaseTool):
                 params["employeeName"] = employeeName
 
             async with httpx.AsyncClient() as client:
-                response = await client.get(
+                response = await logged_request(
+                    "GET",
                     f"{settings.API_HOST}bookings",
+                    client=client,
                     params=params,
                     timeout=30.0
                 )
@@ -99,19 +152,19 @@ class GetBookingListTool(BaseTool):
             return {
                 "success": True,
                 "data": data,
-                "message": "Lấy danh sách bookings thành công"
+                "message": _get_booking_message("get_list_success")
             }
         except httpx.HTTPStatusError as e:
             return {
                 "success": False,
                 "error": f"HTTP error: {e.response.status_code}",
-                "message": f"Lỗi khi lấy danh sách bookings: {e.response.status_code}"
+                "message": _get_booking_message("get_list_error", error=e.response.status_code)
             }
         except Exception as e:
             return {
                 "success": False,
                 "error": str(e),
-                "message": f"Lỗi khi lấy danh sách bookings: {str(e)}"
+                "message": _get_booking_message("get_list_error", error=str(e))
             }
 
 
@@ -145,8 +198,10 @@ class GetBookingDetailTool(BaseTool):
         """Execute get booking detail"""
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.get(
+                response = await logged_request(
+                    "GET",
                     f"{settings.API_HOST}bookings/{id}",
+                    client=client,
                     timeout=30.0
                 )
                 response.raise_for_status()
@@ -155,19 +210,19 @@ class GetBookingDetailTool(BaseTool):
             return {
                 "success": True,
                 "data": data,
-                "message": "Lấy chi tiết booking thành công"
+                "message": _get_booking_message("get_detail_success")
             }
         except httpx.HTTPStatusError as e:
             return {
                 "success": False,
                 "error": f"HTTP error: {e.response.status_code}",
-                "message": f"Lỗi khi lấy chi tiết booking: {e.response.status_code}"
+                "message": _get_booking_message("get_detail_error", error=e.response.status_code)
             }
         except Exception as e:
             return {
                 "success": False,
                 "error": str(e),
-                "message": f"Lỗi khi lấy chi tiết booking: {str(e)}"
+                "message": _get_booking_message("get_detail_error", error=str(e))
             }
 
 
@@ -222,8 +277,10 @@ class CheckBookingAvailabilityTool(BaseTool):
                 params["employeeName"] = employeeName
 
             async with httpx.AsyncClient() as client:
-                response = await client.get(
+                response = await logged_request(
+                    "GET",
                     f"{settings.API_HOST}bookings/availables",
+                    client=client,
                     params=params,
                     timeout=30.0
                 )
@@ -233,19 +290,19 @@ class CheckBookingAvailabilityTool(BaseTool):
             return {
                 "success": True,
                 "data": data,
-                "message": "Kiểm tra booking availability thành công"
+                "message": _get_booking_message("check_availability_success")
             }
         except httpx.HTTPStatusError as e:
             return {
                 "success": False,
                 "error": f"HTTP error: {e.response.status_code}",
-                "message": f"Lỗi khi kiểm tra booking availability: {e.response.status_code}"
+                "message": _get_booking_message("check_availability_error", error=e.response.status_code)
             }
         except Exception as e:
             return {
                 "success": False,
                 "error": str(e),
-                "message": f"Lỗi khi kiểm tra booking availability: {str(e)}"
+                "message": _get_booking_message("check_availability_error", error=str(e))
             }
 
 
@@ -339,8 +396,10 @@ class CreateBookingTool(BaseTool):
             # logger.info(f"Payload for create booking: {payload}")
 
             async with httpx.AsyncClient() as client:
-                response = await client.post(
+                response = await logged_request(
+                    "POST",
                     f"{settings.API_HOST}bookings",
+                    client=client,
                     json=payload,
                     timeout=30.0
                 )
@@ -350,19 +409,19 @@ class CreateBookingTool(BaseTool):
             return {
                 "success": True,
                 "data": data,
-                "message": "Tạo booking thành công"
+                "message": _get_booking_message("create_success")
             }
         except httpx.HTTPStatusError as e:
             return {
                 "success": False,
                 "error": f"HTTP error: {e.response.status_code}",
-                "message": f"Lỗi khi tạo booking: {e.response.status_code}"
+                "message": _get_booking_message("create_error", error=e.response.status_code)
             }
         except Exception as e:
             return {
                 "success": False,
                 "error": str(e),
-                "message": f"Lỗi khi tạo booking: {str(e)}"
+                "message": _get_booking_message("create_error", error=str(e))
             }
 
 
@@ -400,8 +459,10 @@ class UpdateBookingStatusTool(BaseTool):
             payload = {"status": status}
 
             async with httpx.AsyncClient() as client:
-                response = await client.patch(
+                response = await logged_request(
+                    "PATCH",
                     f"{settings.API_HOST}bookings/{id}",
+                    client=client,
                     json=payload,
                     timeout=30.0
                 )
@@ -411,18 +472,18 @@ class UpdateBookingStatusTool(BaseTool):
             return {
                 "success": True,
                 "data": data,
-                "message": f"Cập nhật trạng thái booking thành công: {status}"
+                "message": _get_booking_message("update_status_success", status=status)
             }
         except httpx.HTTPStatusError as e:
             return {
                 "success": False,
                 "error": f"HTTP error: {e.response.status_code}",
-                "message": f"Lỗi khi cập nhật trạng thái booking: {e.response.status_code}"
+                "message": _get_booking_message("update_status_error", error=e.response.status_code)
             }
         except Exception as e:
             return {
                 "success": False,
                 "error": str(e),
-                "message": f"Lỗi khi cập nhật trạng thái booking: {str(e)}"
+                "message": _get_booking_message("update_status_error", error=str(e))
             }
 

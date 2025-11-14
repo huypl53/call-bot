@@ -8,7 +8,7 @@ from cti.config.settings import Language, settings
 # Language-specific system messages
 SYSTEM_MESSAGES = {
     Language.VI: (
-        "Bạn là KIAI assistant, trợ lý ảo thông minh hỗ trợ đặt lịch dịch vụ. Bạn LUÔN LUÔN nói tiếng Việt.\n\n"
+        "Bạn là KIAI assistant, trợ lý ảo thông minh hỗ trợ đặt lịch dịch vụ.\n\n"
         "NHIỆM VỤ CHÍNH:\n"
         "1. Chào hỏi khách hàng thân thiện và giới thiệu bản thân khi khách gọi đến\n"
         "2. Hỗ trợ khách đặt lịch dịch vụ với nhân viên phù hợp\n"
@@ -67,7 +67,7 @@ SYSTEM_MESSAGES = {
         # "- Khi tạo booking, source luôn là 'phone' và twilioCallSid có thể lấy từ session_manager.stream_sid"
     ),
     Language.EN: (
-        "You are KIAI assistant, an intelligent virtual assistant that helps with service booking. You ALWAYS speak English.\n\n"
+        "You are KIAI assistant, an intelligent virtual assistant that helps with service booking.\n\n"
         "MAIN TASKS:\n"
         "1. Greet customers warmly and introduce yourself when they call\n"
         "2. Help customers book services with suitable staff members\n"
@@ -105,7 +105,7 @@ SYSTEM_MESSAGES = {
         "     * employeeId: selected staff ID\n"
         # "     * bookingStartTime: booking start time (format: YYYY-MM-DD HH:mm:ss)\n"
         # "     * furiganaName: furigana name (REQUIRED)\n"
-        # "     * customerName, customerAge, customerGender, phoneNumber: collected information\n"
+        "     * customerName, customerAge, customerGender, phoneNumber: collected information\n"
         "   - Notify the customer of the result\n\n"
         "COMMUNICATION STYLE:\n"
         "- Friendly, polite, professional\n"
@@ -126,7 +126,7 @@ SYSTEM_MESSAGES = {
         # "- When creating a booking, source is always 'phone' and twilioCallSid can be obtained from session_manager.stream_sid"
     ),
     Language.JP: (
-        "あなたはKIAIアシスタントです。サービス予約をサポートするスマートなバーチャルアシスタントです。常に日本語で話してください。\n\n"
+        "あなたはKIAIアシスタントです。サービス予約をサポートするスマートなバーチャルアシスタントです。\n\n"
         "主な任務:\n"
         "1. お客様が電話をかけてきた際に、丁寧に挨拶し自己紹介を行う\n"
         "2. お客様が希望するサービスを適切なスタッフとマッチングして予約をサポートする\n"

@@ -24,6 +24,7 @@ from cti.api.audio_types import (
 from cti.config.constants import LOG_EVENT_TYPES
 from cti.config.prompts import SYSTEM_MESSAGE
 from cti.config.settings import settings
+from cti.core.connection_context import get_connection_language, record_audio
 from cti.core.session_manager import SessionManager
 from cti.services.tool_service import ToolService
 from cti.services.tts_service import TTSService
@@ -90,10 +91,13 @@ class AudioWebSocketHandler:
                 interruption_cooldown_ms = 1000  # 1 second cooldown between interruptions
                 is_response_active = False
                 current_response_id: Optional[str] = None
+                # Audio accumulation for complete responses
+                openai_audio_chunks: list[str] = []  # Accumulate base64 audio chunks
+                client_audio_chunks: list[str] = []  # Accumulate client audio chunks
 
                 async def receive_from_client():
                     """Receive audio/text from client and forward to OpenAI"""
-                    nonlocal session_id, latest_media_timestamp, session_manager, is_paused, is_response_active, current_response_id
+                    nonlocal session_id, latest_media_timestamp, session_manager, is_paused, is_response_active, current_response_id, client_audio_chunks
 
                     try:
                         while True:
@@ -150,6 +154,9 @@ class AudioWebSocketHandler:
                                         latest_media_timestamp = (
                                             timestamp or latest_media_timestamp
                                         )
+                                        # Accumulate audio chunks (don't record individual chunks)
+                                        client_audio_chunks.append(payload)
+                                        
                                         # OpenAI API expects base64-encoded string, not bytes
                                         # Pass the payload directly (it's already base64-encoded)
                                         await connection.input_audio_buffer.append(
@@ -161,7 +168,7 @@ class AudioWebSocketHandler:
                                     session_id = start_msg.get("session_id")
                                     if not session_id:
                                         session_id = str(uuid.uuid4())
-                                    logger.info(f"Session started: {session_id}")
+                                    logger.info(f"Session started: {session_id}, language: {get_connection_language().value}")
                                     # if session_id:
                                     session_manager = SessionManager(session_id)
 
@@ -232,7 +239,7 @@ class AudioWebSocketHandler:
 
                 async def send_to_client():
                     """Receive events from OpenAI and send audio to client"""
-                    nonlocal last_assistant_item, response_start_timestamp, last_interruption_time, is_response_active, current_response_id
+                    nonlocal last_assistant_item, response_start_timestamp, last_interruption_time, is_response_active, current_response_id, openai_audio_chunks, client_audio_chunks
 
                     try:
                         async for event in connection:
@@ -252,16 +259,33 @@ class AudioWebSocketHandler:
                                 is_response_active = True
                                 if hasattr(event, "response_id"):
                                     current_response_id = event.response_id
+                                # Clear audio chunks for new response
+                                openai_audio_chunks.clear()
                                 logger.info("Response started", extra={"handler": "file"})
                             elif event.type == "response.done":
                                 is_response_active = False
                                 current_response_id = None
                                 logger.info("Response done detected")
+                                
+                                # Record complete audio response
+                                if openai_audio_chunks:
+                                    complete_audio = "".join(openai_audio_chunks)
+                                    record_audio(complete_audio, "openai", latest_media_timestamp)
+                                    openai_audio_chunks.clear()
+                                
+                                # Record complete client audio if available
+                                if client_audio_chunks:
+                                    complete_client_audio = "".join(client_audio_chunks)
+                                    record_audio(complete_client_audio, "client", latest_media_timestamp)
+                                    client_audio_chunks.clear()
+                                
                                 # await websocket.send_json({"event": "response.done"})
                             elif event.type == "response.cancelled":
                                 is_response_active = False
                                 current_response_id = None
                                 logger.info("Response cancelled")
+                                # Clear accumulated audio chunks on cancellation
+                                openai_audio_chunks.clear()
                                 await websocket.send_json({"event": "response.cancelled"})
                                 # Clear audio queue on cancellation
                                 await websocket.send_json({"event": "clear"})
@@ -280,6 +304,9 @@ class AudioWebSocketHandler:
                                 audio_payload = base64.b64encode(
                                     base64.b64decode(event.delta)
                                 ).decode("utf-8")
+
+                                # Accumulate audio chunks (don't record individual chunks)
+                                openai_audio_chunks.append(audio_payload)
 
                                 await websocket.send_json(
                                     {

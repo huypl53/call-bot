@@ -40,12 +40,12 @@ class Settings:
         self.DEBUG: bool = os.getenv("DEBUG", "false").lower() == "true"
         self.LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
         # Language setting (vi, en, jp)
-        language_str = os.getenv("LANGUAGE", "en").lower()
+        self.language_str = os.getenv("LANGUAGE", "en").lower()
         try:
-            self.LANGUAGE: Language = Language(language_str)
+            self.LANGUAGE: Language = Language(self.language_str)
         except ValueError:
             raise ValueError(
-                f"Invalid LANGUAGE: {language_str}. Must be one of {[lang.value for lang in Language]}"
+                f"Invalid LANGUAGE: {self.language_str}. Must be one of {[lang.value for lang in Language]}"
             )
         # API Host - ensure trailing slash
         api_host = os.getenv("API_HOST", "https://wan-subacrid-marlon.ngrok-free.dev/api/")

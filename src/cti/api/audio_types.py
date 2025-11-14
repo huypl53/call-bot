@@ -13,7 +13,7 @@ class AudioMessage(TypedDict):
     format: Optional[str]  # Optional audio format (e.g., "pcm16", "wav")
 
 
-class StartMessage(TypedDict):
+class StartMessage(TypedDict, total=False):
     """Connection initialization message"""
     event: Literal["start"]
     session_id: Optional[str]  # Optional session identifier

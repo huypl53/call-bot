@@ -15,7 +15,8 @@ from cti.api.routes import router
 
 # from cti.api.websocket_handler import WebSocketHandler
 from cti.api.websocket_handler_new import WebSocketHandler
-from cti.config.settings import settings
+from cti.config.settings import Language, settings
+from cti.core.connection_context import ConnectionContext
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -86,8 +87,20 @@ async def media_stream_endpoint(websocket: WebSocket):
     Args:
         websocket: FastAPI WebSocket connection
     """
-    logger.info("Media stream endpoint connected: %s", websocket.client.host)
-    await ws_handler.handle_connection(websocket)
+    # Extract language from query parameters
+    language = settings.LANGUAGE  # Default to settings
+    language_param = websocket.query_params.get("language")
+    if language_param:
+        try:
+            language = Language(language_param.lower())
+        except ValueError:
+            logger.warning(
+                f"Invalid language parameter: {language_param}. Using default: {settings.LANGUAGE.value}"
+            )
+    
+    with ConnectionContext(language=language):
+        logger.info("Media stream endpoint connected: %s, language: %s", websocket.client.host, language.value)
+        await ws_handler.handle_connection(websocket)
 
 
 @app.websocket("/audio-stream")
@@ -98,8 +111,20 @@ async def audio_stream_endpoint(websocket: WebSocket):
     Args:
         websocket: FastAPI WebSocket connection
     """
-    logger.info("Audio stream endpoint connected: %s", websocket.client.host)
-    await audio_ws_handler.handle_connection(websocket)
+    # Extract language from query parameters
+    language = settings.LANGUAGE  # Default to settings
+    language_param = websocket.query_params.get("language")
+    if language_param:
+        try:
+            language = Language(language_param.lower())
+        except ValueError:
+            logger.warning(
+                f"Invalid language parameter: {language_param}. Using default: {settings.LANGUAGE.value}"
+            )
+    
+    with ConnectionContext(language=language):
+        logger.info("Audio stream endpoint connected: %s, language: %s", websocket.client.host, language.value)
+        await audio_ws_handler.handle_connection(websocket)
 
 
 @app.on_event("startup")

@@ -17,6 +17,7 @@ from openai.types.realtime import RealtimeServerEvent, session_update_event_para
 from cti.config.constants import LOG_EVENT_TYPES
 from cti.config.prompts import SYSTEM_MESSAGE
 from cti.config.settings import settings
+from cti.core.connection_context import record_audio
 from cti.core.session_manager import SessionManager
 from cti.services.tool_service import ToolService
 
@@ -77,15 +78,15 @@ class WebSocketHandler:
                 response_start_timestamp_twilio = None
                 session_manager: Optional[SessionManager] = None
                 last_interruption_time = 0
-                interruption_cooldown_ms = (
-                    1000  # 1 second cooldown between interruptions
-                )
                 is_response_active = False
                 current_response_id: Optional[str] = None
+                # Audio accumulation for complete responses
+                openai_audio_chunks: list[str] = []  # Accumulate base64 audio chunks
+                twilio_audio_chunks: list[str] = []  # Accumulate Twilio audio chunks
 
                 async def receive_from_twilio():
                     """Receive audio from Twilio and send to OpenAI"""
-                    nonlocal stream_sid, latest_media_timestamp, session_manager, is_response_active, current_response_id
+                    nonlocal stream_sid, latest_media_timestamp, session_manager, is_response_active, current_response_id, twilio_audio_chunks
 
                     try:
                         async for message in websocket.iter_text():
@@ -118,6 +119,9 @@ class WebSocketHandler:
                                     if timestamp is not None:
                                         latest_media_timestamp = int(timestamp)
                                     if payload:
+                                        # Accumulate audio chunks (don't record individual chunks)
+                                        twilio_audio_chunks.append(payload)
+                                        
                                         # Decode base64 and append to OpenAI input buffer
                                         # audio_data = base64.b64decode(payload)
                                         await connection.input_audio_buffer.append(
@@ -135,6 +139,11 @@ class WebSocketHandler:
 
                                 elif event_type == "closed":
                                     logger.info(f"Closed connection to Twilio: {data}")
+                                    # Record complete Twilio audio when connection closes
+                                    if twilio_audio_chunks:
+                                        complete_audio = "".join(twilio_audio_chunks)
+                                        record_audio(complete_audio, "twilio", latest_media_timestamp)
+                                        twilio_audio_chunks.clear()
                                 elif event_type == "mark":
                                     if mark_queue:
                                         mark_queue.pop(0)
@@ -180,7 +189,7 @@ class WebSocketHandler:
 
                 async def send_to_twilio():
                     """Receive events from OpenAI and send audio to Twilio"""
-                    nonlocal last_assistant_item, response_start_timestamp_twilio, last_interruption_time, is_response_active, current_response_id, latest_media_timestamp
+                    nonlocal last_assistant_item, response_start_timestamp_twilio, last_interruption_time, is_response_active, current_response_id, latest_media_timestamp, openai_audio_chunks
 
                     try:
                         async for event in connection:
@@ -200,6 +209,8 @@ class WebSocketHandler:
                                 is_response_active = True
                                 if hasattr(event, "response_id"):
                                     current_response_id = event.response_id
+                                # Clear audio chunks for new response
+                                openai_audio_chunks.clear()
                                 logger.info(
                                     "Response started", extra={"handler": "file"}
                                 )
@@ -209,6 +220,13 @@ class WebSocketHandler:
                                 logger.info(
                                     "Response done detected", extra={"handler": "file"}
                                 )
+                                
+                                # Record complete audio response
+                                if openai_audio_chunks:
+                                    complete_audio = "".join(openai_audio_chunks)
+                                    record_audio(complete_audio, "openai", latest_media_timestamp)
+                                    openai_audio_chunks.clear()
+                                
                                 # await websocket.send_json(
                                 #     {"event": "clear", "streamSid": stream_sid}
                                 # )
@@ -218,6 +236,8 @@ class WebSocketHandler:
                                 logger.info(
                                     "Response cancelled", extra={"handler": "file"}
                                 )
+                                # Clear accumulated audio chunks on cancellation
+                                openai_audio_chunks.clear()
                                 # Clear mark queue on cancellation
                                 mark_queue.clear()
 
@@ -235,6 +255,9 @@ class WebSocketHandler:
                                 audio_payload = base64.b64encode(
                                     base64.b64decode(event.delta)
                                 ).decode("utf-8")
+
+                                # Accumulate audio chunks (don't record individual chunks)
+                                openai_audio_chunks.append(audio_payload)
 
                                 await websocket.send_json(
                                     {

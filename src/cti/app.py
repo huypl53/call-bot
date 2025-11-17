@@ -23,7 +23,7 @@ logger.setLevel(logging.INFO)
 # Add handler if none exists
 if not logger.handlers:
     formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s'
+        '%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s'
     )
     
     # Console handler with filter

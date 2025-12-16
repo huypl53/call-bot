@@ -17,14 +17,26 @@ EMPLOYEE_MESSAGES = {
     Language.VI: {
         "get_list_success": "Lấy danh sách employees thành công",
         "get_list_error": "Lỗi khi lấy danh sách employees: {error}",
+        "get_available_success": "Lấy danh sách nhân viên rảnh thành công",
+        "get_available_error": "Lỗi khi lấy danh sách nhân viên rảnh: {error}",
+        "get_bookings_success": "Lấy danh sách lịch làm của nhân viên thành công",
+        "get_bookings_error": "Lỗi khi lấy danh sách lịch làm của nhân viên: {error}",
     },
     Language.EN: {
         "get_list_success": "Successfully retrieved employee list",
         "get_list_error": "Error retrieving employee list: {error}",
+        "get_available_success": "Successfully retrieved available employees",
+        "get_available_error": "Error retrieving available employees: {error}",
+        "get_bookings_success": "Successfully retrieved employee bookings",
+        "get_bookings_error": "Error retrieving employee bookings: {error}",
     },
     Language.JP: {
         "get_list_success": "従業員一覧の取得に成功しました",
         "get_list_error": "従業員一覧の取得中にエラーが発生しました: {error}",
+        "get_available_success": "空きのある従業員一覧の取得に成功しました",
+        "get_available_error": "空きのある従業員一覧の取得中にエラーが発生しました: {error}",
+        "get_bookings_success": "従業員の予約一覧の取得に成功しました",
+        "get_bookings_error": "従業員の予約一覧の取得中にエラーが発生しました: {error}",
     },
 }
 
@@ -105,3 +117,158 @@ class GetEmployeeListTool(BaseTool):
                 "message": _get_employee_message("get_list_error", error=str(e))
             }
 
+
+class GetAvailableEmployeesTool(BaseTool):
+    """Tool để lấy danh sách nhân viên đang rảnh trong khoảng thời gian"""
+
+    @property
+    def name(self) -> str:
+        return "get_available_employees"
+
+    def get_definition(self) -> Dict[str, Any]:
+        return {
+            "type": "function",
+            "name": self.name,
+            "description": "Lấy danh sách nhân viên đang rảnh trong khoảng thời gian mong muốn",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "page": {"type": "integer", "description": "Số trang (mặc định: 1)"},
+                    "size": {"type": "integer", "description": "Số lượng items mỗi trang (mặc định: 5)"},
+                    "employeeName": {"type": "string", "description": "Lọc theo tên nhân viên (tùy chọn)"},
+                    "startTime": {"type": "string", "description": "Thời gian bắt đầu (format: YYYY-MM-DD HH:mm)"},
+                    "endTime": {"type": "string", "description": "Thời gian kết thúc (format: YYYY-MM-DD HH:mm)"}
+                },
+                "required": []
+            }
+        }
+
+    async def execute(
+        self,
+        session_manager: SessionManager,
+        page: Optional[int] = None,
+        size: Optional[int] = None,
+        employeeName: Optional[str] = None,
+        startTime: Optional[str] = None,
+        endTime: Optional[str] = None,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """Execute get available employees"""
+        try:
+            params: Dict[str, Any] = {}
+            if page is not None:
+                params["page"] = page
+            if size is not None:
+                params["size"] = size
+            if employeeName:
+                params["employeeName"] = employeeName
+            if startTime:
+                params["startTime"] = startTime
+            if endTime:
+                params["endTime"] = endTime
+
+            async with httpx.AsyncClient() as client:
+                response = await logged_request(
+                    "GET",
+                    f"{settings.API_HOST}employees/availables",
+                    client=client,
+                    params=params,
+                    timeout=30.0
+                )
+                response.raise_for_status()
+                data = response.json()
+
+            return {
+                "success": True,
+                "data": data,
+                "message": _get_employee_message("get_available_success")
+            }
+        except httpx.HTTPStatusError as e:
+            return {
+                "success": False,
+                "error": f"HTTP error: {e.response.status_code}",
+                "message": _get_employee_message("get_available_error", error=e.response.status_code)
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "message": _get_employee_message("get_available_error", error=str(e))
+            }
+
+
+class GetEmployeeBookingsTool(BaseTool):
+    """Tool để lấy danh sách booking của một nhân viên"""
+
+    @property
+    def name(self) -> str:
+        return "get_employee_bookings"
+
+    def get_definition(self) -> Dict[str, Any]:
+        return {
+            "type": "function",
+            "name": self.name,
+            "description": "Lấy danh sách bookings của một nhân viên trong khoảng thời gian",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "employeeId": {"type": "string", "description": "ID của nhân viên"},
+                    "page": {"type": "integer", "description": "Số trang (mặc định: 1)"},
+                    "size": {"type": "integer", "description": "Số lượng items mỗi trang (mặc định: 10)"},
+                    "startTime": {"type": "string", "description": "Thời gian bắt đầu (format: YYYY-MM-DD HH:mm)"},
+                    "endTime": {"type": "string", "description": "Thời gian kết thúc (format: YYYY-MM-DD HH:mm)"}
+                },
+                "required": ["employeeId"]
+            }
+        }
+
+    async def execute(
+        self,
+        session_manager: SessionManager,
+        employeeId: str,
+        page: Optional[int] = None,
+        size: Optional[int] = None,
+        startTime: Optional[str] = None,
+        endTime: Optional[str] = None,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """Execute get employee bookings"""
+        try:
+            params: Dict[str, Any] = {}
+            if page is not None:
+                params["page"] = page
+            if size is not None:
+                params["size"] = size
+            if startTime:
+                params["startTime"] = startTime
+            if endTime:
+                params["endTime"] = endTime
+
+            async with httpx.AsyncClient() as client:
+                response = await logged_request(
+                    "GET",
+                    f"{settings.API_HOST}employees/{employeeId}/bookings",
+                    client=client,
+                    params=params,
+                    timeout=30.0
+                )
+                response.raise_for_status()
+                data = response.json()
+
+            return {
+                "success": True,
+                "data": data,
+                "message": _get_employee_message("get_bookings_success")
+            }
+        except httpx.HTTPStatusError as e:
+            return {
+                "success": False,
+                "error": f"HTTP error: {e.response.status_code}",
+                "message": _get_employee_message("get_bookings_error", error=e.response.status_code)
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "message": _get_employee_message("get_bookings_error", error=str(e))
+            }

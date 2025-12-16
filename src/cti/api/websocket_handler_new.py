@@ -17,12 +17,14 @@ from openai import AsyncOpenAI
 from openai.resources.realtime.realtime import AsyncRealtimeConnection
 from openai.types.realtime import RealtimeServerEvent, session_update_event_param
 
+from cti.agents.realtime_agent_orchestrator import RealtimeAgentOrchestrator
 from cti.config.constants import LOG_EVENT_TYPES
-from cti.config.prompts import SYSTEM_MESSAGE, SYSTEM_MESSAGE_CONCISE
 from cti.config.settings import settings
 from cti.core.connection_context import record_audio
 from cti.core.session_manager import SessionManager
+from cti.tools.delegation import DelegateToAgentTool
 from cti.services.tool_service import ToolService
+from langsmith.wrappers import wrap_openai
 
 logger = getLogger(__name__)
 
@@ -48,6 +50,20 @@ class WebSocketHandler:
 
     def __init__(self):
         self.tool_service = ToolService()
+        self.websocket_base_url = self._build_websocket_base_url()
+        self.agent_orchestrator = RealtimeAgentOrchestrator(
+            self.tool_service, self.websocket_base_url
+        )
+        self.tool_service.register_tool(DelegateToAgentTool(self.agent_orchestrator))
+        self.root_agent_instructions = (
+            "Bạn là Root Call Agent, chịu trách nhiệm thoại với khách và giữ websocket Twilio ổn định. "
+            "Bám sát luồng call-flow: (1) bắt máy, hỏi có đặt cho hôm nay không; (2) nếu hôm nay: hỏi nhân viên ưa thích (gợi ý nữ), hỏi giờ bắt đầu và thời lượng dịch vụ, hỏi ưu tiên địa điểm; "
+            "(3) nếu ngày khác: hỏi ngày/giờ mong muốn; (4) vào bước kiểm tra khả dụng, báo khách chờ; "
+            "(5) nếu trống: xin tên + thông tin liên lạc, nhắc lại chi tiết để xác nhận; "
+            "(6) nếu không trống: đề xuất khung giờ khác trong ngày, nếu hết chỗ thì hỏi có muốn đặt ngày khác. "
+            "Handoff qua delegate_to_agent: availability_agent (kiểm tra slot, gợi ý giờ thay thế), booking_agent (dựng và gửi payload đặt lịch), data_agent (tra cứu dịch vụ/nhân viên/chi nhánh/khách). "
+            "Không đọc JSON thô; luôn tóm tắt ngắn gọn, thân thiện."
+        )
         self.CHUNK_LENGTH_S = 0.05  # 50ms chunks
         self.SAMPLE_RATE = 8000
         self.BUFFER_SIZE_BYTES = int(self.SAMPLE_RATE * self.CHUNK_LENGTH_S)
@@ -69,12 +85,12 @@ class WebSocketHandler:
         logger.info("Client connected")
         await websocket.accept()
 
-        websocket_base_url = self._build_websocket_base_url()
-
         try:
             client = AsyncOpenAI(
-                api_key=settings.OPENAI_API_KEY, websocket_base_url=websocket_base_url
+                api_key=settings.OPENAI_API_KEY,
+                websocket_base_url=self.websocket_base_url,
             )
+            client = wrap_openai(client)
         except Exception as exc:
             logger.info(f"❌ Failed to initialize OpenAI client: {exc}")
             await websocket.close(
@@ -371,9 +387,8 @@ class WebSocketHandler:
                 },
                 "output": {"format": {"type": "audio/pcmu"}, "voice": settings.VOICE},
             },
-            # "instructions": str(SYSTEM_MESSAGE),
-            "instructions": str(SYSTEM_MESSAGE_CONCISE),
-            # "tools": self.tool_service.get_tool_definitions(),
+            "instructions": self.root_agent_instructions,
+            "tools": self.tool_service.get_tool_definitions(),
             "tool_choice": "auto",
         }
         logger.info(

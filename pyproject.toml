@@ -12,7 +12,12 @@ dependencies = [
     "twilio>=9.8.5",
 ]
 [dependency-groups]
-dev = ["ipykernel>=6.31.0", "pytest>=8.0.0", "pytest-asyncio>=0.23.0"]
+dev = [
+    "ipykernel>=6.31.0",
+    "langsmith>=0.4.37",
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+]
 
 [tool.uv.workspace]
 members = ["cti"]

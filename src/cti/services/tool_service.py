@@ -8,11 +8,23 @@ from cti.tools.base import BaseTool
 from cti.tools.booking_api import (
     CheckBookingAvailabilityTool,
     CreateBookingTool,
+    GetBookingCalendarTool,
     GetBookingDetailTool,
     GetBookingListTool,
     UpdateBookingStatusTool,
 )
-from cti.tools.employee_api import GetEmployeeListTool
+from cti.tools.customer_api import (
+    CreateCustomerTool,
+    DeleteCustomerTool,
+    GetCustomerListTool,
+    UpdateCustomerTool,
+)
+from cti.tools.department_api import GetDepartmentListTool
+from cti.tools.employee_api import (
+    GetAvailableEmployeesTool,
+    GetEmployeeBookingsTool,
+    GetEmployeeListTool,
+)
 from cti.tools.service_api import GetServiceListTool
 from cti.tools.summary_getter import SummaryGetterTool
 
@@ -30,17 +42,23 @@ class ToolService:
 
     def _register_default_tools(self):
         """Register các tools mặc định"""
+        # Chỉ đăng ký các tool cần cho call-flow và các API hiện có
         tools = [
-            # RoomCheckerTool(),
-            # BookingSaverTool(),
             SummaryGetterTool(),
-            GetBookingListTool(),
-            GetBookingDetailTool(),
+            # Booking flow
             CheckBookingAvailabilityTool(),
+            GetBookingCalendarTool(),
             CreateBookingTool(),
-            UpdateBookingStatusTool(),
+            # Employees/services lookup
             GetEmployeeListTool(),
+            GetAvailableEmployeesTool(),
+            GetEmployeeBookingsTool(),
             GetServiceListTool(),
+            GetDepartmentListTool(),
+            # Customer management (CRUD chọn lọc)
+            GetCustomerListTool(),
+            CreateCustomerTool(),
+            UpdateCustomerTool(),
         ]
         for tool in tools:
             self.register_tool(tool)
@@ -63,6 +81,15 @@ class ToolService:
             List of tool definitions
         """
         return [tool.get_definition() for tool in self._tools.values()]
+
+    def get_tool_definitions_by_names(self, names: List[str]) -> List[Dict[str, Any]]:
+        """Lấy definitions theo tên tool"""
+        definitions: List[Dict[str, Any]] = []
+        for name in names:
+            tool = self._tools.get(name)
+            if tool:
+                definitions.append(tool.get_definition())
+        return definitions
 
     async def execute_tool(
         self,

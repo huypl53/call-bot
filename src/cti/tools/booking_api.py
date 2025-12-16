@@ -28,6 +28,8 @@ BOOKING_MESSAGES = {
         "create_error": "Lỗi khi tạo booking: {error}",
         "update_status_success": "Cập nhật trạng thái booking thành công: {status}",
         "update_status_error": "Lỗi khi cập nhật trạng thái booking: {error}",
+        "get_calendar_success": "Lấy lịch đặt phòng theo ngày thành công",
+        "get_calendar_error": "Lỗi khi lấy lịch đặt phòng: {error}",
     },
     Language.EN: {
         "get_list_success": "Successfully retrieved booking list",
@@ -40,6 +42,8 @@ BOOKING_MESSAGES = {
         "create_error": "Error creating booking: {error}",
         "update_status_success": "Successfully updated booking status: {status}",
         "update_status_error": "Error updating booking status: {error}",
+        "get_calendar_success": "Successfully retrieved booking calendar",
+        "get_calendar_error": "Error retrieving booking calendar: {error}",
     },
     Language.JP: {
         "get_list_success": "予約一覧の取得に成功しました",
@@ -52,6 +56,8 @@ BOOKING_MESSAGES = {
         "create_error": "予約の作成中にエラーが発生しました: {error}",
         "update_status_success": "予約ステータスの更新に成功しました: {status}",
         "update_status_error": "予約ステータスの更新中にエラーが発生しました: {error}",
+        "get_calendar_success": "予約カレンダーの取得に成功しました",
+        "get_calendar_error": "予約カレンダーの取得中にエラーが発生しました: {error}",
     },
 }
 
@@ -71,6 +77,7 @@ class BookingInfoDict(TypedDict, total=False):
     serviceId: str
     employeeId: str
     startTime: str
+    endTime: str
     notes: Optional[str]
 
 
@@ -83,6 +90,8 @@ class CustomerInfoDict(TypedDict, total=False):
     gender: Optional[str]
     phoneNumber: Optional[str]
     firstContactSource: Optional[str]
+    category: Optional[str]
+    note: Optional[str]
 
 
 class GetBookingListTool(BaseTool):
@@ -243,11 +252,11 @@ class CheckBookingAvailabilityTool(BaseTool):
                 "properties": {
                     "startTime": {
                         "type": "string",
-                        "description": "Thời gian bắt đầu (format: YYYY-MM-DD HH:mm:ss)"
+                        "description": "Thời gian bắt đầu (format: YYYY-MM-DD HH:mm hoặc YYYY-MM-DD HH:mm:ss)"
                     },
                     "endTime": {
                         "type": "string",
-                        "description": "Thời gian kết thúc (format: YYYY-MM-DD HH:mm:ss)"
+                        "description": "Thời gian kết thúc (format: YYYY-MM-DD HH:mm hoặc YYYY-MM-DD HH:mm:ss)"
                     },
                     "employeeId": {"type": "string", "description": "ID của nhân viên (tùy chọn)"},
                     "employeeName": {"type": "string", "description": "Tên nhân viên (tùy chọn)"}
@@ -279,7 +288,7 @@ class CheckBookingAvailabilityTool(BaseTool):
             async with httpx.AsyncClient() as client:
                 response = await logged_request(
                     "GET",
-                    f"{settings.API_HOST}bookings/availables",
+                    f"{settings.API_HOST}employees/availables",
                     client=client,
                     params=params,
                     timeout=30.0
@@ -324,6 +333,7 @@ class CreateBookingTool(BaseTool):
                     "source": {"type": "string", "description": "Nguồn booking (ví dụ: 'phone')"},
                     # "twilioCallSid": {"type": "string", "description": "Twilio Call SID"},
                     "startTime": {"type": "string", "description": "Thời gian bắt đầu (format: YYYY-MM-DD HH:mm:ss)"},
+                    "endTime": {"type": "string", "description": "Thời gian kết thúc (format: YYYY-MM-DD HH:mm:ss)"},
                     "serviceId": {"type": "string", "description": "ID của service"},
                     "employeeId": {"type": "string", "description": "ID của nhân viên"},
                     # "bookingStartTime": {"type": "string", "description": "Thời gian bắt đầu booking (format: YYYY-MM-DD HH:mm:ss)"},
@@ -334,9 +344,11 @@ class CreateBookingTool(BaseTool):
                     "customerAge": {"type": "integer", "description": "Tuổi khách hàng (tùy chọn)"},
                     "customerGender": {"type": "string", "description": "Giới tính khách hàng (tùy chọn)"},
                     "phoneNumber": {"type": "string", "description": "Số điện thoại (tùy chọn)"},
+                    "category": {"type": "string", "description": "Nhóm khách hàng (tùy chọn)"},
+                    "note": {"type": "string", "description": "Ghi chú cho khách hàng (tùy chọn)"},
                     # "firstContactSource": {"type": "string", "description": "Nguồn liên hệ đầu tiên (tùy chọn)"}
                 },
-                "required": ["source", "startTime", "serviceId", "employeeId"]
+                "required": ["source", "startTime", "endTime", "serviceId", "employeeId"]
             }
         }
 
@@ -345,6 +357,7 @@ class CreateBookingTool(BaseTool):
         session_manager: SessionManager,
         # twilioCallSid: str,
         startTime: str,
+        endTime: str,
         serviceId: str,
         employeeId: str,
         # bookingStartTime: str,
@@ -357,6 +370,8 @@ class CreateBookingTool(BaseTool):
         customerGender: Optional[str] = None,
         phoneNumber: Optional[str] = None,
         firstContactSource: Optional[str] = None,
+        category: Optional[str] = None,
+        note: Optional[str] = None,
         **kwargs
     ) -> Dict[str, Any]:
         """Execute create booking"""
@@ -364,7 +379,8 @@ class CreateBookingTool(BaseTool):
             booking_info: BookingInfoDict = {
                 "serviceId": serviceId,
                 "employeeId": employeeId,
-                "startTime": startTime
+                "startTime": startTime,
+                "endTime": endTime
             }
             if notes:
                 booking_info["notes"] = notes
@@ -384,6 +400,10 @@ class CreateBookingTool(BaseTool):
                 customer_info["phoneNumber"] = phoneNumber
             if firstContactSource:
                 customer_info["firstContactSource"] = firstContactSource
+            if category:
+                customer_info["category"] = category
+            if note:
+                customer_info["note"] = note
 
             payload = {
                 "source": source,
@@ -487,3 +507,64 @@ class UpdateBookingStatusTool(BaseTool):
                 "message": _get_booking_message("update_status_error", error=str(e))
             }
 
+
+class GetBookingCalendarTool(BaseTool):
+    """Tool để lấy lịch booking theo ngày"""
+
+    @property
+    def name(self) -> str:
+        return "get_booking_calendar"
+
+    def get_definition(self) -> Dict[str, Any]:
+        return {
+            "type": "function",
+            "name": self.name,
+            "description": "Lấy thông tin lịch đặt phòng cho một ngày cụ thể",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "date": {
+                        "type": "string",
+                        "description": "Ngày cần xem lịch (format: YYYY-MM-DD)"
+                    }
+                },
+                "required": ["date"]
+            }
+        }
+
+    async def execute(
+        self,
+        session_manager: SessionManager,
+        date: str,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """Execute get booking calendar"""
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await logged_request(
+                    "GET",
+                    f"{settings.API_HOST}bookings/calendar",
+                    client=client,
+                    params={"date": date},
+                    timeout=30.0
+                )
+                response.raise_for_status()
+                data = response.json() if response.content else None
+
+            return {
+                "success": True,
+                "data": data,
+                "message": _get_booking_message("get_calendar_success")
+            }
+        except httpx.HTTPStatusError as e:
+            return {
+                "success": False,
+                "error": f"HTTP error: {e.response.status_code}",
+                "message": _get_booking_message("get_calendar_error", error=e.response.status_code)
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "message": _get_booking_message("get_calendar_error", error=str(e))
+            }

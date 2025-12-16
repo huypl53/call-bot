@@ -149,3 +149,4 @@ logs/*.log
 sessions/*.json
 audio_records/
 research
+Session.vim

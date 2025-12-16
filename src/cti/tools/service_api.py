@@ -55,7 +55,13 @@ class GetServiceListTool(BaseTool):
                 "type": "object",
                 "properties": {
                     "page": {"type": "integer", "description": "Số trang (mặc định: 1)"},
-                    "size": {"type": "integer", "description": "Số lượng items mỗi trang (mặc định: 5)"}
+                    "size": {"type": "integer", "description": "Số lượng items mỗi trang (mặc định: 5)"},
+                    "name": {"type": "string", "description": "Lọc theo tên dịch vụ (tùy chọn)"},
+                    "description": {"type": "string", "description": "Lọc theo mô tả dịch vụ (tùy chọn)"},
+                    "minDurationMinutes": {"type": "integer", "description": "Thời lượng tối thiểu (phút)"},
+                    "maxDurationMinutes": {"type": "integer", "description": "Thời lượng tối đa (phút)"},
+                    "minPrice": {"type": "number", "description": "Giá tối thiểu"},
+                    "maxPrice": {"type": "number", "description": "Giá tối đa"}
                 },
                 "required": []
             }
@@ -66,6 +72,12 @@ class GetServiceListTool(BaseTool):
         session_manager: SessionManager,
         page: Optional[int] = None,
         size: Optional[int] = None,
+        name: Optional[str] = None,
+        description: Optional[str] = None,
+        minDurationMinutes: Optional[int] = None,
+        maxDurationMinutes: Optional[int] = None,
+        minPrice: Optional[float] = None,
+        maxPrice: Optional[float] = None,
         **kwargs
     ) -> Dict[str, Any]:
         """Execute get service list"""
@@ -75,6 +87,18 @@ class GetServiceListTool(BaseTool):
                 params["page"] = page
             if size is not None:
                 params["size"] = size
+            if name:
+                params["name"] = name
+            if description:
+                params["description"] = description
+            if minDurationMinutes is not None:
+                params["minDurationMinutes"] = minDurationMinutes
+            if maxDurationMinutes is not None:
+                params["maxDurationMinutes"] = maxDurationMinutes
+            if minPrice is not None:
+                params["minPrice"] = minPrice
+            if maxPrice is not None:
+                params["maxPrice"] = maxPrice
 
             async with httpx.AsyncClient() as client:
                 response = await logged_request(
@@ -104,4 +128,3 @@ class GetServiceListTool(BaseTool):
                 "error": str(e),
                 "message": _get_service_message("get_list_error", error=str(e))
             }
-

@@ -23,35 +23,35 @@ logger.setLevel(logging.INFO)
 # Add handler if none exists
 if not logger.handlers:
     formatter = logging.Formatter(
-        '%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s'
+        "%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s"
     )
-    
+
     # Console handler with filter
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(logging.INFO)
     console_handler.setFormatter(formatter)
-    
+
     def console_filter(record):
         """Only log to console if handler is not specified or is 'console'"""
-        handler = getattr(record, 'handler', None)
-        return handler is None or handler == 'console'
-    
+        handler = getattr(record, "handler", None)
+        return handler is None or handler == "console"
+
     console_handler.addFilter(console_filter)
     logger.addHandler(console_handler)
-    
+
     # File handler with filter
     logs_dir = Path("logs")
     logs_dir.mkdir(exist_ok=True)
     log_file = logs_dir / "app.log"
-    file_handler = logging.FileHandler(log_file, mode='w', encoding='utf-8')
+    file_handler = logging.FileHandler(log_file, mode="w", encoding="utf-8")
     file_handler.setLevel(logging.INFO)
     file_handler.setFormatter(formatter)
-    
+
     def file_filter(record):
         """Only log to file if handler is not specified or is 'file'"""
-        handler = getattr(record, 'handler', None)
-        return handler is None or handler == 'file'
-    
+        handler = getattr(record, "handler", None)
+        return handler is None or handler == "file"
+
     file_handler.addFilter(file_filter)
     logger.addHandler(file_handler)
 
@@ -59,7 +59,7 @@ if not logger.handlers:
 app = FastAPI(
     title="KIAI Assistant API",
     description="Trợ lý ảo đặt phòng khách sạn sử dụng OpenAI Realtime API",
-    version="2.0.0"
+    version="2.0.0",
 )
 
 # Add CORS middleware
@@ -97,9 +97,13 @@ async def media_stream_endpoint(websocket: WebSocket):
             logger.warning(
                 f"Invalid language parameter: {language_param}. Using default: {settings.LANGUAGE.value}"
             )
-    
+
     with ConnectionContext(language=language):
-        logger.info("Media stream endpoint connected: %s, language: %s", websocket.client.host, language.value)
+        logger.info(
+            "Media stream endpoint connected: %s, language: %s",
+            websocket.client.host,
+            language.value,
+        )
         await ws_handler.handle_connection(websocket)
 
 
@@ -121,9 +125,13 @@ async def audio_stream_endpoint(websocket: WebSocket):
             logger.warning(
                 f"Invalid language parameter: {language_param}. Using default: {settings.LANGUAGE.value}"
             )
-    
+
     with ConnectionContext(language=language):
-        logger.info("Audio stream endpoint connected: %s, language: %s", websocket.client.host, language.value)
+        logger.info(
+            "Audio stream endpoint connected: %s, language: %s",
+            websocket.client.host,
+            language.value,
+        )
         await audio_ws_handler.handle_connection(websocket)
 
 
@@ -145,3 +153,4 @@ async def shutdown_event():
     print("\n" + "=" * 60)
     print("👋 KIAI Assistant Shutting down...")
     print("=" * 60)
+

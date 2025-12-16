@@ -121,7 +121,7 @@ class WebSocketHandler:
                                     if payload:
                                         # Accumulate audio chunks (don't record individual chunks)
                                         twilio_audio_chunks.append(payload)
-                                        
+
                                         # Decode base64 and append to OpenAI input buffer
                                         # audio_data = base64.b64decode(payload)
                                         await connection.input_audio_buffer.append(
@@ -142,7 +142,11 @@ class WebSocketHandler:
                                     # Record complete Twilio audio when connection closes
                                     if twilio_audio_chunks:
                                         complete_audio = "".join(twilio_audio_chunks)
-                                        record_audio(complete_audio, "twilio", latest_media_timestamp)
+                                        record_audio(
+                                            complete_audio,
+                                            "twilio",
+                                            latest_media_timestamp,
+                                        )
                                         twilio_audio_chunks.clear()
                                 elif event_type == "mark":
                                     if mark_queue:
@@ -220,13 +224,15 @@ class WebSocketHandler:
                                 logger.info(
                                     "Response done detected", extra={"handler": "file"}
                                 )
-                                
+
                                 # Record complete audio response
                                 if openai_audio_chunks:
                                     complete_audio = "".join(openai_audio_chunks)
-                                    record_audio(complete_audio, "openai", latest_media_timestamp)
+                                    record_audio(
+                                        complete_audio, "openai", latest_media_timestamp
+                                    )
                                     openai_audio_chunks.clear()
-                                
+
                                 # await websocket.send_json(
                                 #     {"event": "clear", "streamSid": stream_sid}
                                 # )

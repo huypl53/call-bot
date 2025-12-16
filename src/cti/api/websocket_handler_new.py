@@ -18,7 +18,7 @@ from openai.resources.realtime.realtime import AsyncRealtimeConnection
 from openai.types.realtime import RealtimeServerEvent, session_update_event_param
 
 from cti.config.constants import LOG_EVENT_TYPES
-from cti.config.prompts import SYSTEM_MESSAGE
+from cti.config.prompts import SYSTEM_MESSAGE, SYSTEM_MESSAGE_CONCISE
 from cti.config.settings import settings
 from cti.core.connection_context import record_audio
 from cti.core.session_manager import SessionManager
@@ -77,7 +77,9 @@ class WebSocketHandler:
             )
         except Exception as exc:
             logger.info(f"❌ Failed to initialize OpenAI client: {exc}")
-            await websocket.close(code=1011, reason="OpenAI client initialization failed")
+            await websocket.close(
+                code=1011, reason="OpenAI client initialization failed"
+            )
             return
 
         state = self._build_state()
@@ -109,7 +111,9 @@ class WebSocketHandler:
         except Exception as exc:
             logger.info(f"❌ Error in OpenAI connection: {exc}", exc_info=True)
             try:
-                await websocket.close(code=1011, reason=f"OpenAI connection error: {exc}")
+                await websocket.close(
+                    code=1011, reason=f"OpenAI connection error: {exc}"
+                )
             except Exception:
                 pass
         finally:
@@ -121,7 +125,9 @@ class WebSocketHandler:
                         extra={"handler": "file"},
                     )
                 except Exception as exc:
-                    logger.error(f"Failed to save session: {exc}", extra={"handler": "file"})
+                    logger.error(
+                        f"Failed to save session: {exc}", extra={"handler": "file"}
+                    )
 
     async def _realtime_session_loop(
         self,
@@ -311,7 +317,9 @@ class WebSocketHandler:
             if len(state.startup_buffer) < state.startup_target_bytes:
                 return
 
-            audio_payload = base64.b64encode(bytes(state.startup_buffer)).decode("utf-8")
+            audio_payload = base64.b64encode(bytes(state.startup_buffer)).decode(
+                "utf-8"
+            )
             state.startup_buffer.clear()
             state.startup_warmed = True
         else:
@@ -334,7 +342,8 @@ class WebSocketHandler:
                 current_time = time.time()
                 if (
                     state.audio_buffer
-                    and current_time - state.last_buffer_send_time > self.CHUNK_LENGTH_S * 2
+                    and current_time - state.last_buffer_send_time
+                    > self.CHUNK_LENGTH_S * 2
                 ):
                     await self._flush_audio_buffer(connection, state)
         except asyncio.CancelledError:
@@ -362,8 +371,9 @@ class WebSocketHandler:
                 },
                 "output": {"format": {"type": "audio/pcmu"}, "voice": settings.VOICE},
             },
-            "instructions": str(SYSTEM_MESSAGE),
-            "tools": self.tool_service.get_tool_definitions(),
+            # "instructions": str(SYSTEM_MESSAGE),
+            "instructions": str(SYSTEM_MESSAGE_CONCISE),
+            # "tools": self.tool_service.get_tool_definitions(),
             "tool_choice": "auto",
         }
         logger.info(

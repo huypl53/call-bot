@@ -9,6 +9,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from cti.api.audio_websocket_handler import AudioWebSocketHandler
 
@@ -75,6 +76,10 @@ app.add_middleware(
 
 # Include routes
 app.include_router(router)
+
+# Serve the web client (HTML/JS) from /web
+web_client_dir = Path(__file__).resolve().parents[2] / "web_client"
+app.mount("/web", StaticFiles(directory=web_client_dir, html=True), name="web_client")
 
 # Initialize WebSocket handlers
 ws_handler = WebSocketHandler()

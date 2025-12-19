@@ -54,6 +54,9 @@ class ConnectionState:
     client_audio_chunks: List[str] = field(default_factory=list)
 
 
+BOT_INTERRUPT_DELAY = 500
+
+
 class AudioWebSocketHandler:
     """Handle bidirectional audio WebSocket connections with OpenAI Realtime API."""
 
@@ -465,6 +468,12 @@ class AudioWebSocketHandler:
         current_time = state.latest_media_timestamp
         time_since_last_interruption = current_time - state.last_interruption_time
 
+        async def _interrupt_bot_voice():
+            await asyncio.sleep(BOT_INTERRUPT_DELAY)
+            await websocket.send_json({"event": "clear"})
+
+        asyncio.create_task(_interrupt_bot_voice())
+
         if time_since_last_interruption < state.interruption_cooldown_ms:
             logger.debug(
                 f"Ignoring speech_started event (cooldown: {state.interruption_cooldown_ms - time_since_last_interruption}ms remaining)",
@@ -488,8 +497,6 @@ class AudioWebSocketHandler:
                     logger.warning(
                         f"Failed to cancel response: {exc}", extra={"handler": "file"}
                     )
-
-            await websocket.send_json({"event": "clear"})
 
     async def _handle_function_call(
         self,

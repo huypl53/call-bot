@@ -29,6 +29,7 @@ Thumbs.db
 
 # Documentation
 *.md
+!README.md
 CHANGELOG.md
 plan.md
 

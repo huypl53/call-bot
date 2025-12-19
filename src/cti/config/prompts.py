@@ -25,9 +25,9 @@ SYSTEM_MESSAGES = {
         "- Lịch: get_booking_calendar, check_booking_availability.\n"
         "- Địa điểm: get_department_list (ghi nhận ưu tiên vào notes nếu API không hỗ trợ trực tiếp).\n"
         "- Khách hàng: get_customer_list, create_customer, update_customer.\n"
-        "- Đặt lịch: create_booking (cần startTime, endTime, serviceId, employeeId, twilioCallSid từ session; notes chứa ưu tiên địa điểm).\n"
-        "- Tổng hợp: get_booking_summary để kiểm tra thông tin thiếu.\n"
-        "- Nếu được cấp tool delegate_to_agent, có thể handoff sang availability_agent/booking_agent/data_agent khi cần xử lý chuyên sâu.\n\n"
+        "- Đặt lịch: create_booking (cần startTime, endTime, serviceId, employeeId, twilioCallSid). Điền bookingInfo.startTime (giờ dùng gói), storeName/departmentId/room/meetingPoint, extensionMinutes, options, driverPickup/driverDropoff. customerInfo gồm name/furiganaName/age/gender/phoneNumber/firstContactSource. paymentInfo gồm paymentMethod/totalFee/changePrepared/cashReceivedCustomer/cashReceivedStaff/discount/finalPayment/travelFee/receivedBy nếu có.\n"
+        # "- Tổng hợp: get_booking_summary để kiểm tra thông tin thiếu.\n"
+        # "- Nếu được cấp tool delegate_to_agent, có thể handoff sang availability_agent/booking_agent/data_agent khi cần xử lý chuyên sâu.\n\n"
         "QUY TẮC THỜI GIAN & LỜI NÓI:\n"
         "- Khi truyền thời gian vào tools, dùng format 'YYYY-MM-DD HH:mm:ss' (hoặc HH:mm khi endpoint yêu cầu).\n"
         "- Khi trả lời khách, không đọc chuỗi thời gian thô; chuyển thành câu tự nhiên.\n"
@@ -49,7 +49,7 @@ SYSTEM_MESSAGES = {
         "- Calendar: get_booking_calendar, check_booking_availability.\n"
         "- Location: get_department_list (store preference in notes if the API lacks location fields).\n"
         "- Customers: get_customer_list, create_customer, update_customer.\n"
-        "- Booking: create_booking (requires startTime, endTime, serviceId, employeeId, twilioCallSid from session; put location preference in notes).\n"
+        "- Booking: create_booking (requires startTime, endTime, serviceId, employeeId, twilioCallSid). Populate bookingInfo.startTime (package start), storeName/departmentId/room/meetingPoint, extensionMinutes, options, driverPickup/driverDropoff. customerInfo should include name/furiganaName/age/gender/phoneNumber/firstContactSource when provided. paymentInfo can include paymentMethod/totalFee/changePrepared/cashReceivedCustomer/cashReceivedStaff/discount/finalPayment/travelFee/receivedBy.\n"
         "- Summary: get_booking_summary to see missing info.\n"
         "- If the tool delegate_to_agent is available, hand off to availability_agent/booking_agent/data_agent for focused tasks.\n\n"
         "TIME & SPEAKING RULES:\n"
@@ -71,7 +71,7 @@ SYSTEM_MESSAGES = {
         "- カレンダー: get_booking_calendar, check_booking_availability。\n"
         "- ロケーション: get_department_list（APIにロケーション項目がない場合はnotesに希望を記録）。\n"
         "- 顧客: get_customer_list, create_customer, update_customer。\n"
-        "- 予約: create_booking（startTime, endTime, serviceId, employeeId, セッションのtwilioCallSidが必須。ロケーション希望はnotesへ）。\n"
+        "- 予約: create_booking（startTime, endTime, serviceId, employeeId, セッションのtwilioCallSidが必須）。bookingInfo.startTime（コース開始時刻）、storeName/departmentId/room/meetingPoint、extensionMinutes、options、driverPickup/driverDropoffを埋める。customerInfoにはname/furiganaName/age/gender/phoneNumber/firstContactSourceを可能な限り入れる。paymentInfoにはpaymentMethod/totalFee/changePrepared/cashReceivedCustomer/cashReceivedStaff/discount/finalPayment/travelFee/receivedByを設定可能。\n"
         "- サマリ: get_booking_summaryで不足情報を確認。\n"
         "- delegate_to_agentツールが使える場合は、availability_agent/booking_agent/data_agentへ委譲可能。\n\n"
         "時間と話し方のルール:\n"
@@ -102,7 +102,7 @@ class SystemMessage:
         date_str = now.strftime("%Y-%m-%d")
         time_str = now.strftime("%H:%M:%S")
         datetime_str = f"{date_str} {time_str}"
-        
+
         # Get language-specific datetime instruction
         lang = settings.LANGUAGE
         if lang == Language.VI:

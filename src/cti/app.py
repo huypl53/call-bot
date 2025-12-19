@@ -11,6 +11,8 @@ from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 
 from cti.api.audio_websocket_handler import AudioWebSocketHandler
+
+# from cti.api.audio_websocket_handler_new import AudioWebSocketHandler
 from cti.api.routes import router
 
 # from cti.api.websocket_handler import WebSocketHandler
@@ -153,4 +155,3 @@ async def shutdown_event():
     print("\n" + "=" * 60)
     print("👋 KIAI Assistant Shutting down...")
     print("=" * 60)
-

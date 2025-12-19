@@ -24,6 +24,7 @@ from cti.api.audio_types import (
 )
 from cti.agents.realtime_agent_orchestrator import RealtimeAgentOrchestrator
 from cti.config.constants import LOG_EVENT_TYPES
+from cti.config.prompts import SYSTEM_MESSAGE
 from cti.config.settings import settings
 from cti.core.connection_context import get_connection_language, record_audio
 from cti.core.session_manager import SessionManager
@@ -61,19 +62,20 @@ class AudioWebSocketHandler:
         self.tool_service = ToolService()
         self.tts_service = TTSService()
         self.websocket_base_url = self._build_websocket_base_url()
-        self.agent_orchestrator = RealtimeAgentOrchestrator(
-            self.tool_service, self.websocket_base_url
-        )
-        self.tool_service.register_tool(DelegateToAgentTool(self.agent_orchestrator))
-        self.root_agent_instructions = (
-            "Bạn là Root Call Agent, chịu trách nhiệm thoại với khách và giữ websocket ổn định. "
-            "Bám sát luồng call-flow: (1) bắt máy, hỏi có đặt cho hôm nay không; (2) nếu hôm nay: hỏi nhân viên ưa thích (gợi ý nữ), hỏi giờ bắt đầu và thời lượng dịch vụ, hỏi ưu tiên địa điểm; "
-            "(3) nếu ngày khác: hỏi ngày/giờ mong muốn; (4) vào bước kiểm tra khả dụng, báo khách chờ; "
-            "(5) nếu trống: xin tên + thông tin liên lạc, nhắc lại chi tiết để xác nhận; "
-            "(6) nếu không trống: đề xuất khung giờ khác trong ngày, nếu hết chỗ thì hỏi có muốn đặt ngày khác. "
-            "Handoff qua delegate_to_agent: availability_agent (kiểm tra slot, gợi ý giờ thay thế), booking_agent (dựng và gửi payload đặt lịch), data_agent (tra cứu dịch vụ/nhân viên/chi nhánh/khách). "
-            "Không đọc JSON thô; luôn tóm tắt ngắn gọn, thân thiện."
-        )
+        # self.agent_orchestrator = RealtimeAgentOrchestrator(
+        #     self.tool_service, self.websocket_base_url
+        # )
+        # self.tool_service.register_tool(DelegateToAgentTool(self.agent_orchestrator))
+        self.root_agent_instructions = str(SYSTEM_MESSAGE)
+        # self.root_agent_instructions = (
+        #     "Bạn là Root Call Agent, chịu trách nhiệm thoại với khách và giữ websocket ổn định. "
+        #     "Bám sát luồng call-flow: (1) bắt máy, hỏi có đặt cho hôm nay không; (2) nếu hôm nay: hỏi nhân viên ưa thích (gợi ý nữ), hỏi giờ bắt đầu và thời lượng dịch vụ, hỏi ưu tiên địa điểm; "
+        #     "(3) nếu ngày khác: hỏi ngày/giờ mong muốn; (4) vào bước kiểm tra khả dụng, báo khách chờ; "
+        #     "(5) nếu trống: xin tên + thông tin liên lạc, nhắc lại chi tiết để xác nhận; "
+        #     "(6) nếu không trống: đề xuất khung giờ khác trong ngày, nếu hết chỗ thì hỏi có muốn đặt ngày khác. "
+        #     "Handoff qua delegate_to_agent: availability_agent (kiểm tra slot, gợi ý giờ thay thế), booking_agent (dựng và gửi payload đặt lịch), data_agent (tra cứu dịch vụ/nhân viên/chi nhánh/khách). "
+        #     "Không đọc JSON thô; luôn tóm tắt ngắn gọn, thân thiện."
+        # )
 
     async def handle_connection(self, websocket: WebSocket):
         """Main handler for WebSocket connections."""
@@ -269,9 +271,7 @@ class AudioWebSocketHandler:
                     extra={"handler": "file"},
                 )
             except Exception:
-                logger.info(
-                    f"Received event: {event_type}", extra={"handler": "file"}
-                )
+                logger.info(f"Received event: {event_type}", extra={"handler": "file"})
 
         if event_type == "response.created":
             state.is_response_active = True
@@ -313,9 +313,9 @@ class AudioWebSocketHandler:
             return
 
         if event_type == "response.output_audio.delta" and hasattr(event, "delta"):
-            audio_payload = base64.b64encode(
-                base64.b64decode(event.delta)
-            ).decode("utf-8")
+            audio_payload = base64.b64encode(base64.b64decode(event.delta)).decode(
+                "utf-8"
+            )
 
             state.openai_audio_chunks.append(audio_payload)
 
@@ -338,6 +338,7 @@ class AudioWebSocketHandler:
             return
 
         if event_type == "input_audio_buffer.speech_started":
+            logger.info("input_audio_buffer.speech_started")
             await self._handle_speech_started(connection, websocket, state)
             return
 

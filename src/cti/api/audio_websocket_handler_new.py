@@ -474,6 +474,7 @@ class AudioWebSocketHandler:
 
         logger.info("Speech started detected", extra={"handler": "file"})
 
+        await websocket.send_json({"event": "clear"})
         if state.is_response_active and state.last_assistant_item:
             logger.info(
                 f"User interrupting active response with id: {state.last_assistant_item}",
@@ -488,8 +489,6 @@ class AudioWebSocketHandler:
                     logger.warning(
                         f"Failed to cancel response: {exc}", extra={"handler": "file"}
                     )
-
-            await websocket.send_json({"event": "clear"})
 
     async def _handle_function_call(
         self,

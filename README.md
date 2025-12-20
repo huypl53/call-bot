@@ -187,6 +187,9 @@ Khi app chạy, truy cập:
 - Swagger UI: `http://localhost:5050/docs`
 - ReDoc: `http://localhost:5050/redoc`
 
+## Statics web demo
+Navigate to chrome://flags/#unsafely-treat-insecure-origin-as-secure , add `http://<server-ip>:5050` to `Insecure origins treated as secure`. Reload browser
+
 ## 🔒 Security Notes
 
 - Không commit `.env` file

@@ -32,8 +32,12 @@ class AudioWebSocketClient {
     const timestamp = new Date().toLocaleTimeString();
     const logMessage = `[${timestamp}] ${message}`;
 
-    const consoleLevel = type === "error" ? "error" : type === "warn" ? "warn" : "log";
-    console[consoleLevel](`[${type.toUpperCase()}] ${logMessage}`);
+    // const consoleLevel = type === "error"
+    //   ? "error"
+    //   : type === "warn"
+    //     ? "warn"
+    //     : "log";
+    console["info"](`[${type.toUpperCase()}] ${logMessage}`);
 
     // Also log to UI
     const logDiv = document.getElementById("log");
@@ -432,6 +436,8 @@ class AudioWebSocketClient {
       this.log("Message missing event type", "error");
       return;
     }
+
+    // this.log("[HANDLE] Event type: " + eventType);
 
     if (eventType === "audio") {
       this.isAssistantSpeaking = true;

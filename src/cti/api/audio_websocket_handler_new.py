@@ -468,18 +468,18 @@ class AudioWebSocketHandler:
         current_time = state.latest_media_timestamp
         time_since_last_interruption = current_time - state.last_interruption_time
 
+        if time_since_last_interruption < state.interruption_cooldown_ms:
+            logger.info(
+                f"Ignoring speech_started event (cooldown: {state.interruption_cooldown_ms - time_since_last_interruption}ms remaining)",
+                extra={"handler": "file"},
+            )
+            return
+
         async def _interrupt_bot_voice():
             await asyncio.sleep(BOT_INTERRUPT_DELAY)
             await websocket.send_json({"event": "clear"})
 
         asyncio.create_task(_interrupt_bot_voice())
-
-        if time_since_last_interruption < state.interruption_cooldown_ms:
-            logger.debug(
-                f"Ignoring speech_started event (cooldown: {state.interruption_cooldown_ms - time_since_last_interruption}ms remaining)",
-                extra={"handler": "file"},
-            )
-            return
 
         logger.info("Speech started detected", extra={"handler": "file"})
 

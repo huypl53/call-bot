@@ -1,93 +1,112 @@
-# Call Bot Center Flow Explanation
+# Giải thích luồng Call Bot Center
 
-This document outlines the conversational flow for the Call Bot Center, based on the provided logic graph. The system handles incoming calls for service bookings, managing availability checks, user preferences, and confirmation scenarios.
+Tài liệu này mô tả luồng hội thoại của Call Bot Center dựa trên sơ đồ logic đã cung cấp. Hệ thống xử lý cuộc gọi đến để đặt lịch dịch vụ, quản lý lựa chọn nhân viên/địa điểm, kiểm tra tình trạng trống, các tùy chọn bổ sung, chọn phương thức thanh toán và xác nhận đặt lịch.
 
-## Overview
+## Tổng quan
 
-The bot guides the user through a linear process:
-1.  **Intent Recognition**: Determining if the booking is for today or a future date.
-2.  **Requirement Gathering**: Collecting details on staff, time, duration, and location.
-3.  **Availability Check**: Verifying system resources (rooms/employees).
-4.  **Booking Resolution**: Either confirming the booking or handling unavailability with suggestions.
+Bot dẫn dắt người dùng theo luồng có nhiều nhánh và vòng lặp rõ ràng:
+1.  **Nhận biết ý định**: Xác định khách đặt lịch cho hôm nay hay ngày khác.
+2.  **Thu thập yêu cầu**: Ghi nhận chọn nhân viên, thời gian, thời lượng gói và địa điểm.
+3.  **Xác nhận thời gian/gói**: Chốt lại thông tin thời gian và gói trước khi kiểm tra.
+4.  **Kiểm tra tình trạng trống**: Xác minh tài nguyên (phòng/nhân viên).
+5.  **Tùy chọn & thanh toán**: Hỏi về dịch vụ/tùy chọn bổ sung và phương thức thanh toán (có vòng lặp).
+6.  **Kết thúc đặt lịch**: Xác nhận thông tin và kết thúc, hoặc xử lý trường hợp không còn chỗ với phương án thay thế (có vòng lặp).
 
-## Detailed Flow Steps
+## Các bước luồng chi tiết
 
-### 1. Initial Contact & Date Selection
-*   **Start**: The bot answers the incoming call.
-*   **Date Query**: The bot immediately asks if the customer wants to book a session for **today**.
-    *   **Yes**: Proceeds to the "Today" flow (detailed preferences).
-    *   **No / Other Day**: Acknowledges the request for a different date and asks for the specific **date and time** desired. This path merges directly into the Availability Check.
+### 1. Mở đầu & chọn ngày
+*   **Bắt đầu**: Bot nhấc máy, chào khách.
+*   **Hỏi ngày**: Bot hỏi ngay khách có muốn đặt lịch **hôm nay** không.
+    *   **Có**: Tiếp tục thu thập các lựa chọn chi tiết.
+    *   **Không / Ngày khác**: Ghi nhận yêu cầu ngày khác, hỏi **ngày/giờ** mong muốn, sau đó **quay lại** nhánh hỏi nhân viên (I → D) rồi tiếp tục (thời gian/gói → địa điểm).
 
-### 2. "Today" Flow - Detailed Preferences
-If the customer wants to book for today, the bot gathers specific details:
+### 2. Thu thập lựa chọn (hôm nay hoặc ngày khác)
+Sau khi xác định ý định về ngày, bot thu thập các lựa chọn sau:
 
-1.  **Staff Preference**: Asks if the customer wants to select a specific employee (specifically mentions "female employee" in the graph context).
-2.  **Time & Service**: Regardless of staff choice, the bot asks for:
-    *   Start time.
-    *   Service package duration (in minutes).
-3.  **Location Preference**: Asks if there is a specific preference for the location (branch or specific room).
-    *   **Specific Request**: Bot notes the requested location.
-    *   **No Preference**: Bot confirms it will suggest a suitable location.
+1.  **Chọn nhân viên**: Hỏi khách có muốn chỉ định nhân viên cụ thể không (sơ đồ có nhắc “nhân viên nữ”); dùng `GetAvailableEmployeesTool` để khớp yêu cầu và lưu `employeeId`.
+2.  **Thời gian & gói dịch vụ**: Dù có chỉ định nhân viên hay không, bot đều hỏi:
+    *   Thời gian bắt đầu.
+    *   Thời lượng gói dịch vụ (phút).
+3.  **Chọn địa điểm**: Hỏi khách có yêu cầu về địa điểm (chi nhánh/phòng) không.
+    *   **Có yêu cầu cụ thể**: Bot xác nhận lại địa điểm; dùng `GetDepartmentListTool` để liệt kê/xác thực khi tên địa điểm chưa rõ.
+    *   **Không có yêu cầu**: Bot xác nhận sẽ gợi ý địa điểm còn trống phù hợp.
+4.  **Xác nhận thời gian & gói**: Sau khi có địa điểm (có/không), bot **xác nhận lại** thời gian và gói dịch vụ (nút J) trước khi kiểm tra.
 
-### 3. Availability Check
-All paths (Today's specific flow and Other Day's general flow) converge at the **System Check** phase:
-1.  **Processing**: The bot verifies the requested time and service package against the schedule.
-2.  **Wait Message**: The user is asked to wait while the system checks for **room availability**.
+### 3. Kiểm tra tình trạng trống
+Tất cả nhánh đều hội tụ vào bước **kiểm tra hệ thống**:
+1.  **Xử lý**: Bot kiểm tra lịch dựa trên thời gian, gói dịch vụ, và tình trạng trống của địa điểm/nhân viên.
+2.  **Thông báo chờ**: Bot đề nghị khách đợi trong lúc kiểm tra **phòng còn trống**.
 
-### 4. Resolution Scenarios
+### 4. Các kịch bản xử lý
 
-After checking availability, the flow branches based on the result:
+Sau khi kiểm tra, luồng rẽ nhánh theo kết quả:
 
-#### Scenario A: Slot Available
-If a room/slot is available:
-1.  **Information Collection**: Bot informs the customer the slot is open and requests **Name** and **Contact Information**.
-2.  **Confirmation**: Bot repeats the booking details to confirm accuracy and explains the validation process.
-3.  **Success**: Booking is finalized, and the call ends with a polite closing.
+#### Kịch bản A: Còn chỗ
+Nếu còn phòng/khung giờ trống:
+1.  **Tùy chọn bổ sung**: Bot hỏi khách có muốn thêm tùy chọn/dịch vụ bổ sung không.
+    *   **Có tùy chọn cụ thể**: Bot xác nhận lại tùy chọn (S → S2).
+    *   **Hỏi “Có những tùy chọn nào?”**: Bot giới thiệu danh sách rồi **quay lại hỏi** (S → S3 → S).
+    *   **Tùy chọn không có**: Bot xin lỗi rồi **quay lại hỏi** (S → F2 → S).
+2.  **Phương thức thanh toán**: Bot hỏi khách muốn trả tiền mặt hay thẻ.
+3.  **Thu thập thông tin**: Bot xin **tên** khách hàng.
+4.  **Xác nhận**: Bot nhắc lại thông tin đặt lịch và hướng dẫn cuộc gọi xác nhận.
+5.  **Kết thúc**: Đặt lịch thành công và kết thúc cuộc gọi lịch sự.
 
-#### Scenario B: Slot Not Available
-If the requested slot is unavailable, the bot checks internally for alternatives:
+#### Kịch bản B: Hết chỗ
+Nếu khung giờ yêu cầu không còn chỗ, bot tìm phương án thay thế:
 
-*   **Alternative Exists**:
-    *   The bot proposes a new time (e.g., "We have slots available after XX:XX").
-    *   **Loop**: If the customer accepts/considers, the flow loops back to the **Availability Check** to verify the new specific time.
-*   **No Alternatives (Full)**:
-    *   Bot apologizes and informs the customer that the schedule is completely full for the day.
-    *   **Pivot**: Asks if the customer would like to book for a different day instead, then ends the current flow.
+*   **Có khung giờ khác**:
+    *   Bot đề xuất thời gian mới (ví dụ: “có thể phục vụ từ sau XX:XX”).
+    *   **Vòng lặp**: Nếu khách cân nhắc/đồng ý, luồng quay lại **kiểm tra tình trạng trống** với thời gian mới (N → Kp).
+*   **Hết chỗ cả ngày**:
+    *   Bot xin lỗi và thông báo lịch đã kín cả ngày.
+    *   **Chuyển hướng**: Hỏi khách có muốn đặt sang ngày khác không.
+        *   **Có**: Xin ngày/giờ mới, sau đó đi thẳng tới bước **xác nhận thời gian/gói** rồi kiểm tra (I2 → J → Jp).
+        *   **Không**: Kết thúc cuộc gọi lịch sự.
 
-## Flow Diagram Reference
+## Tham chiếu sơ đồ luồng
 
-The logic follows this high-level structure:
+Luồng logic ở mức cao như sau:
 
 ```mermaid
-graph TD
-    Start[Answer Phone] --> Date{Book for Today?}
-    
-    %% Today Path
-    Date -- Yes --> Staff{Specific Staff?}
-    Staff --> TimePkg[Ask Time & Duration]
-    TimePkg --> Loc{Location Pref?}
-    Loc -- Yes --> NoteLoc[Note Location]
-    Loc -- No --> SuggestLoc[Suggest Location]
-    NoteLoc --> Check
-    SuggestLoc --> Check
-    
-    %% Other Day Path
-    Date -- No --> AskDate[Ask Date & Time]
-    AskDate --> Check
-    
-    %% System Processing
-    Check[Check Schedule] --> Wait[Checking Availability...]
-    Wait --> IsFree{Available?}
-    
-    %% Success Path
-    IsFree -- Yes --> Info[Get Name/Contact]
-    Info --> Confirm[Confirm Details]
-    Confirm --> End[Success/End]
-    
-    %% Failure/Alternative Path
-    IsFree -- No --> HasAlt{Alternative Time?}
-    HasAlt -- Yes --> SuggestAlt[Suggest New Time]
-    SuggestAlt --> IsFree
-    HasAlt -- No --> Full[Full Today]
-    Full --> SwitchDate[Suggest Other Day/End]
+---
+config:
+  layout: dagre
+---
+flowchart TB
+    A["Start: Nhấc máy / Nghe điện thoại"] --> C["AI bot: Anh/chị muốn đặt lịch cho hôm nay phải không ạ？"]
+    C -- Có --> D{"AI bot: Anh/chị có chỉ định tiếp viên không ạ？<br>(dùng tool GetAvailableEmployeesTool để tìm employee theo khách yêu cầu, nếu khác ko yêu cầu tên cụ thể, gợi ý cho khách. Ghi nhớ employeId)"}
+    C -- Không/Ngày khác --> E["AI bot: Vâng , anh/chị muốn đặt vào ngày khác đúng không ạ？"]
+    D -- Có/Không --> H["AI bot: Anh/chị muốn bắt đầu lúc mấy giờ và chọn gói bao nhiêu phút ạ？"]
+    E --> I["AI bot: Cho em xin ngày anh/chị mong muốn ạ。"]
+    H --> Hp@{ label: "AI bot: Anh/chị có yêu cầu về địa điểm sử dụng không ạ？（ví dụ: cửa hàng hoặc phòng cụ thể; Nếu khách đưa ra địa điểm, sử dụng tool `GetDepartmentListTool` để tìm, lưu ý khách có thể đưa ra tên địa<br>điểm ko hoàn toàn chính xác nên ko đưa tên địa điểm vào tìm kiếm, thay vào đó để trống tên, tìm toàn bộ rồi xác nhận lại danh sách trả về có tên địa điểm mà khách yêu cầu ）" }
+    Hp -- Có/Địa điểm cụ thể --> H2["AI bot: Vâng, em đã rõ ạ。(Địa điểm) đúng không ạ。"]
+    Hp -- Không/Để bên em sắp xếp --> H3["AI bot: Vâng, em sẽ giới thiệu địa điểm còn trống cho anh/chị ạ。"]
+    H2 --> J["Xác nhận thời gian và gói dịch vụ"]
+    H3 --> J
+    I --> D
+    J --> Jp["AI bot: Vâng ạ, xin anh/chị đợi một chút để em kiểm tra tình trạng trống."]
+    Jp --> Kp{"Có còn chỗ trống không？"}
+    Kp -- YES --> L["AI bot: Có chỗ trống rồi ạ！"]
+    L --> S["AI bot: Anh/chị có muốn thêm tùy chọn/dịch vụ bổ sung nào không ạ？"]
+    S -- YES/Có tùy chọn cụ thể --> S2["AI bot: Vâng, em đã rõ ạ。(Tùy chọn) đúng không ạ。"]
+    S -- Có những tùy chọn nào？ --> S3["AI bot: Em xin giới thiệu danh sách các tùy chọn ạ"]
+    S -- NO --> F1["AI bot: Anh/chị muốn thanh toán bằng tiền mặt hay thẻ ạ？"]
+    S -- Tùy chọn không cung cấp --> F2["AI bot: Rất xin lỗi ạ, bên em không cung cấp dịch vụ đó."]
+    S2 --> F1
+    S3 --> S
+    F1 --> W["AI bot: Cho em xin tên của anh/chị ạ。OR: A-san có đúng không ạ？"]
+    F2 --> S
+    W --> P["AI bot: Nhắc lại và xác nhận nội dung đặt lịch, hướng dẫn cuộc gọi xác nhận"]
+    P --> Q["Xác nhận đặt lịch / End: AI bot: Rất mong được đón tiếp anh/chị"]
+    Kp -- NO --> Mp{"Có thể đổi sang khung giờ khác không？"}
+    Mp -- YES --> N["AI bot: Hôm nay bên em có thể phục vụ từ sau ○ giờ, anh/chị thấy thế nào ạ？"]
+    Mp -- NO/Hết chỗ cả ngày --> O["AI bot: Rất xin lỗi ạ, hôm nay bên em đã kín lịch cả ngày."]
+    N --> Kp
+    O --> R["AI bot: Anh/chị có muốn đặt sang ngày khác không ạ？"]
+    R -- NO --> End["End: AI bot: Hẹn dịp khác, mong được phục vụ anh/chị ạ。"]
+    R -- YES --> I2["AI bot: Cho em xin ngày giờ anh/chị mong muốn ạ。"]
+    I2 --> J
+
+    Hp@{ shape: diamond}
 ```

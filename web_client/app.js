@@ -82,16 +82,16 @@ class AudioWebSocketClient {
       this.ws.onmessage = (event) => {
         try {
           let messageData = event.data;
-          console.log('[WS] Message received, type:', typeof messageData, 'isArrayBuffer:', messageData instanceof ArrayBuffer, 'isBlob:', messageData instanceof Blob);
+          // console.log('[WS] Message received, type:', typeof messageData, 'isArrayBuffer:', messageData instanceof ArrayBuffer, 'isBlob:', messageData instanceof Blob);
 
           // Handle different data types the server might send
           if (typeof messageData === 'string') {
             // Normal case: text message
-            console.log('[WS] Received string message, length:', messageData.length);
-            console.log('[WS] Raw message (first 200 chars):', messageData.substring(0, 200));
+            // console.log('[WS] Received string message, length:', messageData.length);
+            // console.log('[WS] Raw message (first 200 chars):', messageData.substring(0, 200));
             try {
               const data = JSON.parse(messageData);
-              console.log('[WS] Parsed JSON:', data);
+              // console.log('[WS] Parsed JSON:', data);
               this.handleMessage(data);
             } catch (parseError) {
               console.error('[WS] Failed to parse JSON:', parseError);
@@ -285,12 +285,12 @@ class AudioWebSocketClient {
               const jsonString = JSON.stringify(message);
               // Test parse to ensure it's valid JSON
               JSON.parse(jsonString);
-              console.log('[SEND] Audio chunk, payload length:', base64.length, 'timestamp:', now);
-              console.log('[SEND] JSON string type:', typeof jsonString, 'length:', jsonString.length);
+              // console.log('[SEND] Audio chunk, payload length:', base64.length, 'timestamp:', now);
+              // console.log('[SEND] JSON string type:', typeof jsonString, 'length:', jsonString.length);
               // Explicitly send as string to ensure text frame (not binary)
               // In browser WebSocket API, sending a string always creates a text frame
               this.ws.send(jsonString);
-              console.log('[SEND] Audio chunk sent as TEXT frame');
+              // console.log('[SEND] Audio chunk sent as TEXT frame');
               this.lastSendTime = now;
             } catch (error) {
               // Log errors to console
@@ -417,7 +417,7 @@ class AudioWebSocketClient {
   }
 
   handleMessage(data) {
-    console.log('[HANDLE] Received message:', data);
+    // console.log('[HANDLE] Received message:', data);
 
     // Validate message structure
     if (!data || typeof data !== 'object') {
@@ -436,7 +436,7 @@ class AudioWebSocketClient {
     }
 
     if (eventType === 'audio') {
-      console.log('[HANDLE] Processing audio chunk');
+      // console.log('[HANDLE] Processing audio chunk');
       this.isAssistantSpeaking = true;
       this.handleAudioChunk(data);
     } else if (eventType === 'response.done') {
@@ -465,12 +465,12 @@ class AudioWebSocketClient {
   }
 
   handleAudioChunk(data) {
-    console.log('[AUDIO] Handling audio chunk, payload type:', typeof data.payload, 'length:', data.payload?.length);
+    // console.log('[AUDIO] Handling audio chunk, payload type:', typeof data.payload, 'length:', data.payload?.length);
     const payload = data.payload;
     if (payload) {
       try {
         const audioData = this.base64ToArrayBuffer(payload);
-        console.log('[AUDIO] Decoded audio data, size:', audioData.byteLength, 'bytes');
+        // console.log('[AUDIO] Decoded audio data, size:', audioData.byteLength, 'bytes');
         this.audioChunks.push(audioData);
         // this.log(`Received audio chunk (${audioData.byteLength} bytes)`, 'info');
         // Queue the audio chunk for playback instead of playing immediately
@@ -513,7 +513,7 @@ class AudioWebSocketClient {
   queueAudioChunk(audioData) {
     // Add to queue
     this.audioQueue.push(audioData);
-    console.log('[AUDIO] Queued audio chunk, queue length:', this.audioQueue.length);
+    // console.log('[AUDIO] Queued audio chunk, queue length:', this.audioQueue.length);
 
     // Start playing if not already playing
     if (!this.isPlaying) {
@@ -565,7 +565,7 @@ class AudioWebSocketClient {
       const currentTime = this.playbackContext.currentTime;
       const startTime = Math.max(currentTime, this.nextPlayTime);
       source.start(startTime);
-      console.log('[AUDIO] Scheduled audio chunk, duration:', duration.toFixed(3), 's, startTime:', startTime.toFixed(3), 'currentTime:', currentTime.toFixed(3));
+      // console.log('[AUDIO] Scheduled audio chunk, duration:', duration.toFixed(3), 's, startTime:', startTime.toFixed(3), 'currentTime:', currentTime.toFixed(3));
 
       // Update next play time for seamless playback
       this.nextPlayTime = startTime + duration;
@@ -578,14 +578,14 @@ class AudioWebSocketClient {
           this.audioSources.splice(index, 1);
         }
 
-        console.log('[AUDIO] Audio chunk finished playing, queue length:', this.audioQueue.length);
+        // console.log('[AUDIO] Audio chunk finished playing, queue length:', this.audioQueue.length);
         // Continue processing queue
         if (this.audioQueue.length > 0) {
           this.processAudioQueue();
         } else {
           this.isPlaying = false;
           this.isAssistantSpeaking = false;
-          console.log('[AUDIO] Audio queue empty, playback finished');
+          // console.log('[AUDIO] Audio queue empty, playback finished');
         }
       };
 

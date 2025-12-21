@@ -8,6 +8,8 @@ from typing import Any, Dict
 
 from cti.core.session_manager import SessionManager
 
+from openai.types.realtime import RealtimeFunctionToolParam
+
 
 class BaseTool(ABC):
     """
@@ -16,7 +18,7 @@ class BaseTool(ABC):
     """
 
     @abstractmethod
-    def get_definition(self) -> Dict[str, Any]:
+    def get_definition(self) -> RealtimeFunctionToolParam:
         """
         Trả về OpenAI function definition.
 
@@ -26,7 +28,9 @@ class BaseTool(ABC):
         pass
 
     @abstractmethod
-    async def execute(self, session_manager: SessionManager, **kwargs) -> Dict[str, Any]:
+    async def execute(
+        self, session_manager: SessionManager, **kwargs
+    ) -> Dict[str, Any]:
         """
         Execute tool với arguments được cung cấp.
 

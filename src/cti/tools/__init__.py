@@ -2,7 +2,6 @@
 
 from cti.tools.base import BaseTool
 from cti.tools.booking_api import (
-    CheckBookingAvailabilityTool,
     CreateBookingTool,
     GetBookingCalendarTool,
     GetBookingDetailTool,
@@ -29,7 +28,6 @@ __all__ = [
     "SummaryGetterTool",
     "GetBookingListTool",
     "GetBookingDetailTool",
-    "CheckBookingAvailabilityTool",
     "GetBookingCalendarTool",
     "CreateBookingTool",
     "UpdateBookingStatusTool",

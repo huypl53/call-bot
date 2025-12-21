@@ -25,11 +25,10 @@ class APILogger:
         self.logger.setLevel(logging.INFO)
         self.logger.handlers.clear()
 
-        file_handler = logging.FileHandler(log_file, mode='a', encoding='utf-8')
+        file_handler = logging.FileHandler(log_file, mode="a", encoding="utf-8")
         file_handler.setLevel(logging.INFO)
         formatter = logging.Formatter(
-            '%(asctime)s - %(levelname)s - %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
+            "%(asctime)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
         )
         file_handler.setFormatter(formatter)
         self.logger.addHandler(file_handler)
@@ -38,9 +37,9 @@ class APILogger:
     def _sanitize_headers(self, headers: Dict[str, Any]) -> Dict[str, Any]:
         """Remove sensitive information from headers."""
         sanitized = dict(headers)
-        for key in ['authorization', 'api-key', 'x-api-key', 'cookie']:
+        for key in ["authorization", "api-key", "x-api-key", "cookie"]:
             if key.lower() in sanitized:
-                sanitized[key] = '***REDACTED***'
+                sanitized[key] = "***REDACTED***"
         return sanitized
 
     def _format_payload(self, data: Any) -> str:
@@ -61,7 +60,7 @@ class APILogger:
         params: Optional[Dict[str, Any]] = None,
         headers: Optional[Dict[str, Any]] = None,
         json_data: Optional[Dict[str, Any]] = None,
-        timeout: Optional[float] = None
+        timeout: Optional[float] = None,
     ) -> None:
         """Log API request details."""
         self.logger.info("=" * 80)
@@ -85,7 +84,7 @@ class APILogger:
         headers: Optional[Dict[str, Any]] = None,
         content: Optional[bytes] = None,
         text: Optional[str] = None,
-        is_error: bool = False
+        is_error: bool = False,
     ) -> None:
         """Log API response details."""
         level = logging.ERROR if is_error else logging.INFO
@@ -95,14 +94,16 @@ class APILogger:
         self.logger.log(level, "-" * 80)
 
         if headers:
-            self.logger.log(level, f"Response Headers:\n{self._format_payload(dict(headers))}")
+            self.logger.log(
+                level, f"Response Headers:\n{self._format_payload(dict(headers))}"
+            )
 
         response_body = None
         if text:
             response_body = text
         elif content:
             try:
-                response_body = content.decode('utf-8')
+                response_body = content.decode("utf-8")
             except UnicodeDecodeError:
                 response_body = f"<binary content, length: {len(content)} bytes>"
 
@@ -114,13 +115,20 @@ class APILogger:
                 pass
 
             if len(response_body) > 5000:
-                response_body = response_body[:5000] + f"\n... (truncated, total length: {len(response_body)} chars)"
+                response_body = (
+                    response_body[:5000]
+                    + f"\n... (truncated, total length: {len(response_body)} chars)"
+                )
 
             self.logger.log(level, f"Response Body:\n{response_body}")
 
         self.logger.log(level, "=" * 80)
+        if response_body and is_error:
+            raise Exception(response_body)
 
-    def log_error(self, error: Exception, method: Optional[str] = None, url: Optional[str] = None) -> None:
+    def log_error(
+        self, error: Exception, method: Optional[str] = None, url: Optional[str] = None
+    ) -> None:
         """Log API error with full context."""
         self.logger.error("=" * 80)
         self.logger.error(f"API ERROR - {type(error).__name__}")
@@ -129,7 +137,11 @@ class APILogger:
         self.logger.error("-" * 80)
         self.logger.error(f"Error Message: {str(error)}")
 
-        if isinstance(error, httpx.HTTPStatusError) and hasattr(error, 'response') and error.response:
+        if (
+            isinstance(error, httpx.HTTPStatusError)
+            and hasattr(error, "response")
+            and error.response
+        ):
             response_text = None
             try:
                 if error.response.content:
@@ -142,23 +154,19 @@ class APILogger:
                 dict(error.response.headers) if error.response.headers else None,
                 error.response.content,
                 response_text,
-                is_error=True
+                is_error=True,
             )
 
         self.logger.error("=" * 80)
 
     async def log_httpx_request(
-        self,
-        client: httpx.AsyncClient,
-        method: str,
-        url: str,
-        **kwargs
+        self, client: httpx.AsyncClient, method: str, url: str, **kwargs
     ) -> httpx.Response:
         """Make an httpx request and log request/response details."""
-        params = kwargs.get('params')
-        headers = kwargs.get('headers')
-        json_data = kwargs.get('json')
-        timeout = kwargs.get('timeout')
+        params = kwargs.get("params")
+        headers = kwargs.get("headers")
+        json_data = kwargs.get("json")
+        timeout = kwargs.get("timeout")
 
         self.log_request(method, url, params, headers, json_data, timeout)
 
@@ -178,7 +186,7 @@ class APILogger:
                 dict(response.headers) if response.headers else None,
                 response.content,
                 response_text,
-                is_error=is_error
+                is_error=is_error,
             )
 
             return response
@@ -201,10 +209,7 @@ def get_api_logger() -> APILogger:
 
 
 async def logged_request(
-    method: str,
-    url: str,
-    client: Optional[httpx.AsyncClient] = None,
-    **kwargs
+    method: str, url: str, client: Optional[httpx.AsyncClient] = None, **kwargs
 ) -> httpx.Response:
     """
     Make a logged HTTP request using httpx.
@@ -225,4 +230,3 @@ async def logged_request(
             return await logger.log_httpx_request(temp_client, method, url, **kwargs)
     else:
         return await logger.log_httpx_request(client, method, url, **kwargs)
-

@@ -271,93 +271,6 @@ class GetBookingDetailTool(BaseTool):
             }
 
 
-class CheckBookingAvailabilityTool(BaseTool):
-    """Tool để kiểm tra booking có sẵn không"""
-
-    @property
-    def name(self) -> str:
-        return "check_booking_availability"
-
-    def get_definition(self) -> Dict[str, Any]:
-        return {
-            "type": "function",
-            "name": self.name,
-            "description": "Kiểm tra booking có sẵn trong khoảng thời gian",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "startTime": {
-                        "type": "string",
-                        "description": "Thời gian bắt đầu (format: YYYY-MM-DD HH:mm hoặc YYYY-MM-DD HH:mm:ss)",
-                    },
-                    "endTime": {
-                        "type": "string",
-                        "description": "Thời gian kết thúc (format: YYYY-MM-DD HH:mm hoặc YYYY-MM-DD HH:mm:ss)",
-                    },
-                    "employeeId": {
-                        "type": "string",
-                        "description": "ID của nhân viên (tùy chọn)",
-                    },
-                    "employeeName": {
-                        "type": "string",
-                        "description": "Tên nhân viên (tùy chọn)",
-                    },
-                },
-                "required": ["startTime", "endTime"],
-            },
-        }
-
-    async def execute(
-        self,
-        session_manager: SessionManager,
-        startTime: str,
-        endTime: str,
-        employeeId: Optional[str] = None,
-        employeeName: Optional[str] = None,
-        **kwargs,
-    ) -> Dict[str, Any]:
-        """Execute check booking availability"""
-        try:
-            params = {"startTime": startTime, "endTime": endTime}
-            if employeeId:
-                params["employeeId"] = employeeId
-            if employeeName:
-                params["employeeName"] = employeeName
-
-            async with httpx.AsyncClient() as client:
-                response = await logged_request(
-                    "GET",
-                    f"{settings.API_HOST}employees/availables",
-                    client=client,
-                    params=params,
-                    timeout=30.0,
-                )
-                response.raise_for_status()
-                data = response.json()
-
-            return {
-                "success": True,
-                "data": data,
-                "message": _get_booking_message("check_availability_success"),
-            }
-        except httpx.HTTPStatusError as e:
-            return {
-                "success": False,
-                "error": f"HTTP error: {e.response.status_code}",
-                "message": _get_booking_message(
-                    "check_availability_error", error=e.response.status_code
-                ),
-            }
-        except Exception as e:
-            return {
-                "success": False,
-                "error": str(e),
-                "message": _get_booking_message(
-                    "check_availability_error", error=str(e)
-                ),
-            }
-
-
 class CreateBookingTool(BaseTool):
     """Tool để tạo booking mới"""
 
@@ -427,14 +340,14 @@ class CreateBookingTool(BaseTool):
                         "type": "string",
                         "description": "Tên cửa hàng (tùy chọn)",
                     },
-                    "extensionMinutes": {
-                        "type": "integer",
-                        "description": "Thời gian gia hạn (phút)",
-                    },
-                    "meetingPoint": {
-                        "type": "string",
-                        "description": "Điểm hẹn (tùy chọn)",
-                    },
+                    # "extensionMinutes": {
+                    #     "type": "integer",
+                    #     "description": "Thời gian gia hạn (phút)",
+                    # },
+                    # "meetingPoint": {
+                    #     "type": "string",
+                    #     "description": "Điểm hẹn (tùy chọn)",
+                    # },
                     "departmentId": {
                         "type": "string",
                         "description": "ID phòng ban (tùy chọn)",
@@ -445,14 +358,14 @@ class CreateBookingTool(BaseTool):
                         "items": {"type": "string"},
                         "description": "Các lựa chọn bổ sung (tùy chọn)",
                     },
-                    "driverDropoff": {
-                        "type": "string",
-                        "description": "Điểm trả khách (tùy chọn)",
-                    },
-                    "driverPickup": {
-                        "type": "string",
-                        "description": "Điểm đón khách (tùy chọn)",
-                    },
+                    # "driverDropoff": {
+                    #     "type": "string",
+                    #     "description": "Điểm trả khách (tùy chọn)",
+                    # },
+                    # "driverPickup": {
+                    #     "type": "string",
+                    #     "description": "Điểm đón khách (tùy chọn)",
+                    # },
                     "paymentMethod": {
                         "type": "string",
                         "description": "Phương thức thanh toán (tùy chọn)",
@@ -476,18 +389,18 @@ class CreateBookingTool(BaseTool):
                         "type": "number",
                         "description": "Tiền khách thanh toán (tùy chọn)",
                     },
-                    "cashReceivedStaff": {
-                        "type": "number",
-                        "description": "Tiền nhân viên nhận (tùy chọn)",
-                    },
-                    "discount": {
-                        "type": "number",
-                        "description": "Chiết khấu (tùy chọn)",
-                    },
-                    "finalPayment": {
-                        "type": "number",
-                        "description": "Số tiền thanh toán cuối cùng (tùy chọn)",
-                    },
+                    # "cashReceivedStaff": {
+                    #     "type": "number",
+                    #     "description": "Tiền nhân viên nhận (tùy chọn)",
+                    # },
+                    # "discount": {
+                    #     "type": "number",
+                    #     "description": "Chiết khấu (tùy chọn)",
+                    # },
+                    # "finalPayment": {
+                    #     "type": "number",
+                    #     "description": "Số tiền thanh toán cuối cùng (tùy chọn)",
+                    # },
                     "travelFee": {
                         "type": "number",
                         "description": "Phí di chuyển (tùy chọn)",
@@ -631,15 +544,13 @@ class CreateBookingTool(BaseTool):
             return {
                 "success": False,
                 "error": f"HTTP error: {e.response.status_code}",
-                "message": _get_booking_message(
-                    "create_error", error=e.response.status_code
-                ),
+                "message": e,
             }
         except Exception as e:
             return {
                 "success": False,
                 "error": str(e),
-                "message": _get_booking_message("create_error", error=str(e)),
+                # "message": _get_booking_message("create_error", error=str(e)),
             }
 
 

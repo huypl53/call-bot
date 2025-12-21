@@ -14,7 +14,12 @@ from fastapi import WebSocket
 from fastapi.websockets import WebSocketDisconnect
 from openai import AsyncOpenAI
 from openai.resources.realtime.realtime import AsyncRealtimeConnection
-from openai.types.realtime import RealtimeServerEvent, session_update_event_param
+from openai.types.realtime import (
+    RealtimeServerEvent,
+    RealtimeToolsConfigParam,
+    session_update_event_param,
+    RealtimeFunctionToolParam,
+)
 
 from cti.api.audio_types import (
     AudioMessage,
@@ -47,14 +52,14 @@ class ConnectionState:
     response_start_timestamp: Optional[int] = None
     is_paused: bool = False
     last_interruption_time: int = 0
-    interruption_cooldown_ms: int = 1000
+    interruption_cooldown_ms: int = 500
     is_response_active: bool = False
     current_response_id: Optional[str] = None
     openai_audio_chunks: List[str] = field(default_factory=list)
     client_audio_chunks: List[str] = field(default_factory=list)
 
 
-BOT_INTERRUPT_DELAY = 500
+BOT_INTERRUPT_DELAY = 200
 
 
 class AudioWebSocketHandler:
@@ -69,16 +74,47 @@ class AudioWebSocketHandler:
         #     self.tool_service, self.websocket_base_url
         # )
         # self.tool_service.register_tool(DelegateToAgentTool(self.agent_orchestrator))
-        self.root_agent_instructions = str(SYSTEM_MESSAGE)
-        # self.root_agent_instructions = (
-        #     "Bạn là Root Call Agent, chịu trách nhiệm thoại với khách và giữ websocket ổn định. "
-        #     "Bám sát luồng call-flow: (1) bắt máy, hỏi có đặt cho hôm nay không; (2) nếu hôm nay: hỏi nhân viên ưa thích (gợi ý nữ), hỏi giờ bắt đầu và thời lượng dịch vụ, hỏi ưu tiên địa điểm; "
-        #     "(3) nếu ngày khác: hỏi ngày/giờ mong muốn; (4) vào bước kiểm tra khả dụng, báo khách chờ; "
-        #     "(5) nếu trống: xin tên + thông tin liên lạc, nhắc lại chi tiết để xác nhận; "
-        #     "(6) nếu không trống: đề xuất khung giờ khác trong ngày, nếu hết chỗ thì hỏi có muốn đặt ngày khác. "
-        #     "Handoff qua delegate_to_agent: availability_agent (kiểm tra slot, gợi ý giờ thay thế), booking_agent (dựng và gửi payload đặt lịch), data_agent (tra cứu dịch vụ/nhân viên/chi nhánh/khách). "
-        #     "Không đọc JSON thô; luôn tóm tắt ngắn gọn, thân thiện."
-        # )
+        # self.root_agent_instructions = str(SYSTEM_MESSAGE)
+        self.root_agent_instructions = (
+            "ROLE:\n"
+            "- Bạn là Root Call Agent, chịu trách nhiệm thoại với khách và giữ websocket ổn định.\n"
+            "\n"
+            "STYLE:\n"
+            "- Nói ngắn gọn, thân thiện, hỏi từng bước một.\n"
+            "- Không đọc JSON thô; luôn tóm tắt kết quả tool bằng ngôn ngữ tự nhiên.\n"
+            "- Không tự suy diễn dữ liệu thiếu; thiếu gì thì hỏi lại.\n"
+            "\n"
+            "FLOW (bám sát sơ đồ):\n"
+            "1) Start -> hỏi khách có đặt cho hôm nay không.\n"
+            "   - Nếu Có -> hỏi chỉ định nhân viên (gợi ý nhân viên nữ) -> hỏi giờ bắt đầu & thời lượng gói.\n"
+            "   - Nếu Không/Ngày khác -> xác nhận ngày khác -> hỏi ngày/giờ (I) -> quay lại hỏi nhân viên (D) -> hỏi giờ bắt đầu & thời lượng gói.\n"
+            "2) Hỏi địa điểm (Hp):\n"
+            "   - Có địa điểm -> xác nhận lại (H2).\n"
+            "   - Không -> nói sẽ sắp xếp phù hợp (H3).\n"
+            "3) Xác nhận thời gian & gói (J) -> nói sẽ kiểm tra ngay và chủ động gợi ý phương án phù hợp (không để khách chờ lâu) -> kiểm tra trống (Kp).\n"
+            "4) Nếu Kp = YES:\n"
+            "   - Hỏi tùy chọn/dịch vụ bổ sung (S).\n"
+            "     * Hỏi danh sách -> giới thiệu rồi quay lại S (S3 -> S).\n"
+            "     * Tùy chọn không có -> xin lỗi rồi quay lại S (F2 -> S).\n"
+            "     * Có tùy chọn cụ thể -> xác nhận (S2) -> tiếp.\n"
+            "   - Hỏi thanh toán (F1) -> xin tên (W) -> nhắc lại xác nhận (P) -> kết thúc (Q).\n"
+            "5) Nếu Kp = NO:\n"
+            "   - Hỏi có đổi giờ khác không (Mp).\n"
+            "     * YES -> đề xuất khung giờ mới (N) -> quay lại Kp.\n"
+            "     * NO/Hết chỗ cả ngày -> xin lỗi (O) -> hỏi ngày khác (R).\n"
+            "       - YES -> hỏi ngày/giờ mới (I2) -> đi thẳng tới J (không quay lại D nếu đã có nhân viên).\n"
+            "       - NO -> kết thúc.\n"
+            "\n"
+            "TOOLS:\n"
+            "- get_available_employees: kiểm tra còn chỗ theo startTime/endTime; dùng khi khách chỉ định nhân viên hoặc muốn gợi ý nhân viên phù hợp.\n"
+            "- get_department_list: khi tên địa điểm mơ hồ, liệt kê để xác nhận.\n"
+            "- get_service_list: khi cần map thời lượng gói sang serviceId hoặc khi khách hỏi danh sách tùy chọn/dịch vụ bổ sung.\n"
+            "- get_employee_list: chỉ dùng khi khách muốn xem danh sách nhân viên.\n"
+            "- create_booking: chỉ gọi khi đã có startTime, endTime, serviceId, employeeId, customerName; thêm options/departmentId/storeName/paymentMethod nếu có.\n"
+            "\n"
+            "TIME FORMAT:\n"
+            "- get_available_employees dùng 'YYYY-MM-DD HH:mm'; create_booking dùng 'YYYY-MM-DD HH:mm:ss'."
+        )
 
     async def handle_connection(self, websocket: WebSocket):
         """Main handler for WebSocket connections."""
@@ -279,7 +315,7 @@ class AudioWebSocketHandler:
         if event_type == "response.created":
             state.is_response_active = True
             if hasattr(event, "response_id"):
-                state.current_response_id = event.response_id
+                state.current_response_id = getattr(event, "response_id")
             state.openai_audio_chunks.clear()
             logger.info("Response started", extra={"handler": "file"})
             return
@@ -479,11 +515,12 @@ class AudioWebSocketHandler:
             await asyncio.sleep(BOT_INTERRUPT_DELAY)
             await websocket.send_json({"event": "clear"})
 
-        asyncio.create_task(_interrupt_bot_voice())
-
         logger.info("Speech started detected", extra={"handler": "file"})
 
-        if state.is_response_active and state.last_assistant_item:
+        asyncio.create_task(_interrupt_bot_voice())
+
+        # if state.is_response_active and state.last_assistant_item:
+        if True:
             logger.info(
                 f"User interrupting active response with id: {state.last_assistant_item}",
                 extra={"handler": "file"},
@@ -562,6 +599,7 @@ class AudioWebSocketHandler:
 
     async def _initialize_session(self, connection: AsyncRealtimeConnection):
         """Initialize OpenAI session with PCM16/WAV format."""
+        tools: RealtimeToolsConfigParam = self.tool_service.get_tool_definitions()
         session_config: session_update_event_param.Session = {
             "type": "realtime",
             "model": settings.MODEL,
@@ -579,23 +617,57 @@ class AudioWebSocketHandler:
                         "type": "server_vad",
                         "threshold": 0.5,
                         "prefix_padding_ms": 300,
-                        "silence_duration_ms": 200,
+                        "silence_duration_ms": 800,
                         "create_response": True,
                         "interrupt_response": True,
                     },
                 },
-                "output": {
-                    "voice": settings.VOICE,
-                    "format": {
-                        "type": "audio/pcm",
-                        "rate": 24000,
-                    },
-                },
             },
+            # "output": {
+            #     "voice": settings.VOICE,
+            #     "format": {
+            #         "type": "audio/pcm",
+            #         "rate": 24000,
+            #     },
+            # },
             "instructions": self.root_agent_instructions,
-            "tools": self.tool_service.get_tool_definitions(),
+            "tools": tools,
             "tool_choice": "auto",
         }
+        # session_config= session_update_event_param.Session(
+        # "type": "realtime",
+        # model= settings.MODEL,
+        # output_modalities= ["audio"],
+        # "audio": {
+        #     "input": {
+        #         "transcription": {
+        #             "model": "whisper-1",
+        #         },
+        #         "format": {
+        #             "type": "audio/pcm",
+        #             "rate": 24000,
+        #         },
+        #         "turn_detection": {
+        #             "type": "server_vad",
+        #             "threshold": 0.5,
+        #             "prefix_padding_ms": 300,
+        #             "silence_duration_ms": 200,
+        #             "create_response": True,
+        #             "interrupt_response": True,
+        #         },
+        #     },
+        #     "output": {
+        #         "voice": settings.VOICE,
+        #         "format": {
+        #             "type": "audio/pcm",
+        #             "rate": 24000,
+        #         },
+        #     },
+        # },
+        # "instructions": self.root_agent_instructions,
+        # "tools": self.tool_service.get_tool_definitions(),
+        # "tool_choice": "auto")
+
         logger.info(
             f"Sending session update: {json.dumps(session_config, ensure_ascii=False)}",
             extra={"handler": "file"},

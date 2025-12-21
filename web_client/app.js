@@ -304,7 +304,7 @@ class AudioWebSocketClient {
         }
 
         // Update visualizer
-        this.updateVisualizer(inputData);
+        this.updateVisualizer(resampled);
       };
 
       source.connect(processor);

@@ -18,6 +18,12 @@ from cti.services.tool_service import ToolService
 logger = logging.getLogger(__name__)
 
 AGENT_TOOLSETS: Dict[str, List[str]] = {
+    "math_agent": [
+        "math_add",
+        "math_subtract",
+        "math_multiply",
+        "math_divide",
+    ],
     "availability_agent": [
         "get_available_employees",
         "check_booking_availability",
@@ -41,6 +47,13 @@ AGENT_TOOLSETS: Dict[str, List[str]] = {
 }
 
 AGENT_INSTRUCTIONS: Dict[str, str] = {
+    "math_agent": (
+        "Bạn là Math Agent. Thực hiện các phép tính toán học cơ bản: "
+        "- Cộng, trừ, nhân, chia hai số được cung cấp. "
+        "- Luôn trả về kết quả rõ ràng và thông tin về phép tính đã thực hiện. "
+        "Nếu gặp lỗi (ví dụ: chia cho 0), hãy báo rõ lỗi. "
+        "Không cần chào hỏi, chỉ thực hiện tính toán khi được yêu cầu."
+    ),
     "availability_agent": (
         "Bạn là Availability Agent. Bám sát call-flow: khi root báo bước 'kiểm tra khả dụng' hoặc cần gợi ý khung giờ khác, hãy dùng tools để: "
         "- Lấy nhân viên rảnh theo khoảng thời gian và dịch vụ; nếu không đủ dữ liệu, nêu rõ cần thêm gì (thời gian, duration, nhân viên ưu tiên). "

@@ -11,9 +11,10 @@ from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from cti.api.audio_websocket_handler import AudioWebSocketHandler
+# from cti.api.audio_websocket_handler import AudioWebSocketHandler
 
 # from cti.api.audio_websocket_handler_new import AudioWebSocketHandler
+from cti.api.audio_websocket_agents_handler import AudioWebSocketHandler
 from cti.api.routes import router
 
 # from cti.api.websocket_handler import WebSocketHandler

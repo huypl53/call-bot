@@ -13,7 +13,8 @@ class AudioWebSocketClient {
     this.playbackContext = null;
     this.sendErrorLogged = false;
     this.lastSendTime = 0;
-    this.sendInterval = 100; // Minimum 100ms between sends (10 messages per second max) - more conservative
+    this.sendInterval = 100; // Minimum 100ms between sends (10 messages per second max)
+    this.pendingAudioData = []; // Accumulate audio data between sends
     this.audioQueue = [];
     this.isPlaying = false;
     this.nextPlayTime = 0;
@@ -57,6 +58,9 @@ class AudioWebSocketClient {
       this.log(`Connecting to ${wsUrl}...`, 'info');
       console.log('[CONNECT] WebSocket URL:', wsUrl);
       console.log('[CONNECT] Session ID:', sessionId);
+
+      // Store WebSocket URL to derive HTTP URL for downloads
+      this.wsUrl = wsUrl;
 
       // Create WebSocket - match demo.py behavior exactly
       this.ws = new WebSocket(wsUrl);
@@ -193,128 +197,85 @@ class AudioWebSocketClient {
 
   async startRecording() {
     try {
-      // Request microphone access
+      // Request microphone access with 24kHz sample rate directly
       this.mediaStream = await navigator.mediaDevices.getUserMedia({
         audio: {
+          sampleRate: 24000,
           channelCount: 1,
-          // Prefer 24 kHz but allow the browser to choose a compatible rate;
-          // we'll resample to 24 kHz before sending to the server.
-          sampleRate: { ideal: this.targetSampleRate },
           echoCancellation: true,
           noiseSuppression: true,
-          autoGainControl: true
         }
       });
 
       this.log('Microphone access granted', 'success');
 
-      // Create audio context using the stream's sample rate when available to
-      // avoid cross-context sample-rate mismatches (seen as
-      // "createMediaStreamSource" errors in some browsers).
-      const trackSettings = this.mediaStream.getAudioTracks()[0]?.getSettings() || {};
-      const preferredSampleRate = trackSettings.sampleRate;
-      try {
-        this.audioContext = new (window.AudioContext || window.webkitAudioContext)(
-          preferredSampleRate ? { sampleRate: preferredSampleRate } : {}
-        );
-      } catch (ctxError) {
-        // Fallback to default sample rate if the preferred one is unsupported.
-        this.log(`Falling back to default sample rate: ${ctxError.message}`, 'info');
-        this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      // Create audio context at 24kHz - no resampling needed!
+      this.audioContext = new (window.AudioContext || window.webkitAudioContext)({
+        sampleRate: 24000,
+        latencyHint: 'interactive'
+      });
+
+      if (this.audioContext.state === 'suspended') {
+        await this.audioContext.resume();
       }
-      console.log('[AUDIO] Input sample rate:', preferredSampleRate, 'Context sample rate:', this.audioContext.sampleRate, 'Target sample rate:', this.targetSampleRate);
+
+      console.log('[AUDIO] Context sample rate:', this.audioContext.sampleRate);
+
+      // Check for AudioWorklet support
+      if (!this.audioContext.audioWorklet) {
+        throw new Error('AudioWorklet API not supported in this browser.');
+      }
+
+      // Load the PCM recorder worklet
+      await this.audioContext.audioWorklet.addModule('pcm-recorder.worklet.js');
 
       // Create source from microphone
       const source = this.audioContext.createMediaStreamSource(this.mediaStream);
 
-      // Create script processor for audio processing
-      const bufferSize = 4096;
-      const processor = this.audioContext.createScriptProcessor(bufferSize, 1, 1);
+      // Create AudioWorkletNode for recording
+      this.recorderNode = new AudioWorkletNode(this.audioContext, 'pcm-recorder');
 
-      processor.onaudioprocess = (e) => {
+      // Handle audio chunks from the worklet
+      this.recorderNode.port.onmessage = (event) => {
         if (!this.isRecording) return;
+        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
 
-        const inputData = e.inputBuffer.getChannelData(0);
+        const chunk = event.data instanceof ArrayBuffer
+          ? new Int16Array(event.data)
+          : event.data;
 
-        // Resample to server-required 24 kHz while keeping acquisition context native
-        const resampled = this.resampleFloat32(
-          inputData,
-          this.audioContext.sampleRate,
-          this.targetSampleRate
-        );
-
-        // Voice Activity Detection (VAD)
-        const audioLevel = this.calculateAudioLevel(inputData);
-        this.lastAudioLevel = audioLevel;
-        const wasUserSpeaking = this.isUserSpeaking;
-
-        if (audioLevel > this.vadThreshold) {
-          this.vadSilenceFrames = 0;
-          this.isUserSpeaking = true;
-
-          // If user starts speaking while assistant is speaking, interrupt
-          if (!wasUserSpeaking && this.isAssistantSpeaking) {
-            console.log('[VAD] User started speaking, interrupting assistant');
-            this.sendStopEvent();
-          }
-        } else {
-          this.vadSilenceFrames++;
-          if (this.vadSilenceFrames > this.vadSilenceThreshold) {
-            this.isUserSpeaking = false;
-          }
+        if (!chunk || !(chunk instanceof Int16Array) || chunk.length === 0) {
+          return;
         }
 
-        const pcm16 = this.floatTo16BitPCM(resampled);
-        const base64 = this.arrayBufferToBase64(pcm16.buffer);
-
-        // Send audio chunk - match server's expected format exactly
-        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-          const now = Date.now();
-          // Throttle sends to avoid overwhelming the server
-          if (now - this.lastSendTime >= this.sendInterval) {
-            try {
-              // Match server's AudioMessage format exactly
-              const message = {
-                event: 'audio',
-                payload: String(base64),  // Ensure it's a string
-                timestamp: Number(now),   // Ensure it's a number
-                format: 'pcm16'           // format string
-              };
-              // Validate and send as JSON string (like demo.py)
-              // IMPORTANT: Must be a string to send as TEXT frame, not binary
-              const jsonString = JSON.stringify(message);
-              // Test parse to ensure it's valid JSON
-              JSON.parse(jsonString);
-              // console.log('[SEND] Audio chunk, payload length:', base64.length, 'timestamp:', now);
-              // console.log('[SEND] JSON string type:', typeof jsonString, 'length:', jsonString.length);
-              // Explicitly send as string to ensure text frame (not binary)
-              // In browser WebSocket API, sending a string always creates a text frame
-              this.ws.send(jsonString);
-              // console.log('[SEND] Audio chunk sent as TEXT frame');
-              this.lastSendTime = now;
-            } catch (error) {
-              // Log errors to console
-              if (!this.sendErrorLogged) {
-                console.error('[SEND] Error sending audio:', error);
-                this.log(`Error sending audio: ${error.message}`, 'error');
-                this.sendErrorLogged = true;
-              }
-            }
+        // Send audio immediately - no throttling needed with AudioWorklet
+        try {
+          const base64 = this.arrayBufferToBase64(chunk.buffer);
+          const message = {
+            event: 'audio',
+            payload: base64,
+            timestamp: Date.now(),
+            format: 'pcm16'
+          };
+          this.ws.send(JSON.stringify(message));
+        } catch (error) {
+          if (!this.sendErrorLogged) {
+            console.error('[SEND] Error sending audio:', error);
+            this.log(`Error sending audio: ${error.message}`, 'error');
+            this.sendErrorLogged = true;
           }
         }
-
-        // Update visualizer
-        this.updateVisualizer(inputData);
       };
 
-      source.connect(processor);
-      processor.connect(this.audioContext.destination);
+      source.connect(this.recorderNode);
+      // Connect to destination to keep the audio graph active
+      this.recorderNode.connect(this.audioContext.destination);
 
-      this.processor = processor;
       this.isRecording = true;
-      this.log('Recording started', 'success');
+      this.log('Recording started (AudioWorklet)', 'success');
 
     } catch (error) {
+      console.error('[AUDIO] Failed to start recording:', error);
       this.log(`Failed to start recording: ${error.message}`, 'error');
       this.updateStatus('disconnected', 'Microphone Access Denied');
     }
@@ -322,6 +283,14 @@ class AudioWebSocketClient {
 
   stopRecording() {
     this.isRecording = false;
+
+    if (this.recorderNode) {
+      this.recorderNode.port.onmessage = null;
+      try {
+        this.recorderNode.disconnect();
+      } catch (e) { }
+      this.recorderNode = null;
+    }
 
     if (this.processor) {
       this.processor.disconnect();
@@ -342,6 +311,9 @@ class AudioWebSocketClient {
       cancelAnimationFrame(this.animationFrame);
       this.animationFrame = null;
     }
+
+    // Clear pending audio data
+    this.pendingAudioData = [];
 
     this.log('Recording stopped', 'info');
   }
@@ -461,6 +433,9 @@ class AudioWebSocketClient {
       this.log('Clear event received', 'info');
       this.isAssistantSpeaking = false;
       this.stopAudioPlayback();
+    } else if (eventType === 'session.ended') {
+      console.log('[HANDLE] Session ended with audio URL:', data.audio_download_url);
+      this.handleSessionEnded(data);
     } else {
       console.warn('[HANDLE] Unknown event type:', eventType, data);
       this.log(`Unknown event type: ${eventType}`, 'info');
@@ -488,120 +463,133 @@ class AudioWebSocketClient {
   }
 
   stopAudioPlayback() {
-    // Stop all active audio sources immediately
+    // Clear pending chunks
+    this.pendingPlaybackChunks = [];
+    this.audioChunks = [];
+    this.audioQueue = [];
+
+    // Stop all active audio sources (legacy)
     this.audioSources.forEach(source => {
       try {
         source.stop();
-      } catch (e) {
-        // Source may already be stopped
-      }
+      } catch (e) { }
     });
     this.audioSources = [];
 
-    // Clear audio queue and reset playback
-    this.audioChunks = [];
-    this.audioQueue = [];
-    this.isPlaying = false;
-    this.nextPlayTime = 0;
-
-    // Optionally close and recreate playback context for clean state
-    if (this.playbackContext) {
-      this.playbackContext.close();
-      this.playbackContext = null;
+    // Tell playback worklet to stop
+    if (this.playbackNode) {
+      try {
+        this.playbackNode.port.postMessage({ type: 'stop' });
+      } catch (e) { }
     }
+
+    this.isPlaying = false;
+    this.isPlayingAudio = false;
+    this.nextPlayTime = 0;
 
     console.log('[AUDIO] Playback stopped and cleared');
   }
 
-  queueAudioChunk(audioData) {
-    // Add to queue
-    this.audioQueue.push(audioData);
-    // console.log('[AUDIO] Queued audio chunk, queue length:', this.audioQueue.length);
-
-    // Start playing if not already playing
-    if (!this.isPlaying) {
-      this.processAudioQueue();
-    }
-  }
-
-  processAudioQueue() {
-    if (this.audioQueue.length === 0) {
-      this.isPlaying = false;
+  async ensurePlaybackNode() {
+    if (this.playbackNode) {
       return;
     }
 
-    // Create or reuse playback context
-    if (!this.playbackContext) {
-      this.playbackContext = new (window.AudioContext || window.webkitAudioContext)({
-        sampleRate: 48000
+    if (!this.playbackInitPromise) {
+      this.playbackInitPromise = (async () => {
+        if (!this.playbackContext) {
+          this.playbackContext = new (window.AudioContext || window.webkitAudioContext)({
+            sampleRate: 24000,
+            latencyHint: 'interactive'
+          });
+        }
+
+        if (this.playbackContext.state === 'suspended') {
+          await this.playbackContext.resume();
+        }
+
+        if (!this.playbackContext.audioWorklet) {
+          throw new Error('AudioWorklet API not supported');
+        }
+
+        await this.playbackContext.audioWorklet.addModule('pcm-playback.worklet.js');
+
+        this.playbackNode = new AudioWorkletNode(
+          this.playbackContext,
+          'pcm-playback',
+          { outputChannelCount: [1] }
+        );
+
+        this.playbackNode.port.onmessage = (event) => {
+          const message = event.data;
+          if (message && message.type === 'drained') {
+            this.isPlayingAudio = false;
+            this.isAssistantSpeaking = false;
+          }
+        };
+
+        // Configure fade duration
+        const fadeSamples = Math.floor(this.playbackContext.sampleRate * 0.02);
+        this.playbackNode.port.postMessage({ type: 'config', fadeSamples });
+
+        this.playbackNode.connect(this.playbackContext.destination);
+      })().catch((error) => {
+        this.playbackInitPromise = null;
+        throw error;
       });
-      this.nextPlayTime = this.playbackContext.currentTime;
     }
 
-    // Process one chunk at a time
-    const audioData = this.audioQueue.shift();
+    await this.playbackInitPromise;
+  }
 
+  async queueAudioChunk(audioData) {
     try {
-      // Convert PCM16 to Float32
-      const pcm16 = new Int16Array(audioData);
-      const float32 = new Float32Array(pcm16.length);
-      for (let i = 0; i < pcm16.length; i++) {
-        float32[i] = pcm16[i] / 32768.0;
+      const int16Array = new Int16Array(audioData);
+      if (!int16Array || int16Array.length === 0) {
+        return;
       }
 
-      // Create buffer
-      const buffer = this.playbackContext.createBuffer(1, float32.length, 24000);
-      buffer.getChannelData(0).set(float32);
+      // Store pending chunks while initializing
+      if (!this.pendingPlaybackChunks) {
+        this.pendingPlaybackChunks = [];
+      }
+      this.pendingPlaybackChunks.push(int16Array);
 
-      // Calculate duration
-      const duration = buffer.duration;
-
-      // Create source and schedule playback
-      const source = this.playbackContext.createBufferSource();
-      source.buffer = buffer;
-      source.connect(this.playbackContext.destination);
-
-      // Track this source so we can stop it if interrupted
-      this.audioSources.push(source);
-
-      // Schedule playback at the correct time to avoid gaps
-      const currentTime = this.playbackContext.currentTime;
-      const startTime = Math.max(currentTime, this.nextPlayTime);
-      source.start(startTime);
-      // console.log('[AUDIO] Scheduled audio chunk, duration:', duration.toFixed(3), 's, startTime:', startTime.toFixed(3), 'currentTime:', currentTime.toFixed(3));
-
-      // Update next play time for seamless playback
-      this.nextPlayTime = startTime + duration;
-
-      // Handle source end - process next chunk in queue
-      source.onended = () => {
-        // Remove from active sources
-        const index = this.audioSources.indexOf(source);
-        if (index > -1) {
-          this.audioSources.splice(index, 1);
-        }
-
-        // console.log('[AUDIO] Audio chunk finished playing, queue length:', this.audioQueue.length);
-        // Continue processing queue
-        if (this.audioQueue.length > 0) {
-          this.processAudioQueue();
-        } else {
-          this.isPlaying = false;
-          this.isAssistantSpeaking = false;
-          // console.log('[AUDIO] Audio queue empty, playback finished');
-        }
-      };
-
+      await this.ensurePlaybackNode();
+      this.flushPendingPlaybackChunks();
     } catch (error) {
-      console.error('[AUDIO] Error playing audio chunk:', error);
-      this.log(`Failed to play audio chunk: ${error.message}`, 'error');
-      // Continue with next chunk even if this one failed
-      if (this.audioQueue.length > 0) {
-        this.processAudioQueue();
-      } else {
-        this.isPlaying = false;
+      console.error('[AUDIO] Failed to queue audio:', error);
+      this.pendingPlaybackChunks = [];
+    }
+  }
+
+  flushPendingPlaybackChunks() {
+    if (!this.playbackNode || !this.pendingPlaybackChunks) {
+      return;
+    }
+
+    while (this.pendingPlaybackChunks.length > 0) {
+      const chunk = this.pendingPlaybackChunks.shift();
+      if (!chunk || !(chunk instanceof Int16Array) || chunk.length === 0) {
+        continue;
+      }
+
+      try {
+        this.playbackNode.port.postMessage(
+          { type: 'chunk', payload: chunk.buffer },
+          [chunk.buffer]
+        );
+        this.isPlayingAudio = true;
+        this.isPlaying = true;
+      } catch (error) {
+        console.error('[AUDIO] Failed to send chunk to worklet:', error);
       }
     }
+  }
+
+  // Legacy method for compatibility
+  processAudioQueue() {
+    // Now handled by AudioWorklet
   }
 
   finishAudioPlayback() {
@@ -611,6 +599,53 @@ class AudioWebSocketClient {
     }
     // Let the queue finish playing
     console.log('[AUDIO] Response done, queue will finish playing');
+  }
+
+  handleSessionEnded(data) {
+    if (data.audio_download_url) {
+      this.audioDownloadUrl = data.audio_download_url;
+      this.log('Session ended. Recording available for download.', 'success');
+      this.showDownloadLink(data.audio_download_url);
+    } else {
+      this.log('Session ended', 'info');
+    }
+    // Now close the WebSocket
+    this.forceClose();
+  }
+
+  showDownloadLink(audioUrl) {
+    // Derive HTTP URL from WebSocket URL
+    // ws://localhost:5050/audio-stream -> http://localhost:5050
+    // wss://example.com/audio-stream -> https://example.com
+    let baseUrl = '';
+    if (this.wsUrl) {
+      try {
+        const wsUrlObj = new URL(this.wsUrl);
+        const protocol = wsUrlObj.protocol === 'wss:' ? 'https:' : 'http:';
+        baseUrl = `${protocol}//${wsUrlObj.host}`;
+      } catch (e) {
+        console.error('[DOWNLOAD] Failed to parse WebSocket URL:', e);
+        baseUrl = `${window.location.protocol}//${window.location.host}`;
+      }
+    } else {
+      baseUrl = `${window.location.protocol}//${window.location.host}`;
+    }
+
+    const fullUrl = audioUrl.startsWith('/') ? `${baseUrl}${audioUrl}` : audioUrl;
+    console.log('[DOWNLOAD] Full URL:', fullUrl);
+
+    // Create download link in the log
+    const logDiv = document.getElementById('log');
+    const entry = document.createElement('div');
+    entry.className = 'log-entry success';
+    entry.innerHTML = `
+      <a href="${fullUrl}" download="conversation.wav"
+         style="color: #4fc1ff; text-decoration: underline; cursor: pointer;">
+         Click here to download your conversation recording
+      </a>
+    `;
+    logDiv.appendChild(entry);
+    logDiv.scrollTop = logDiv.scrollHeight;
   }
 
   initVisualizer() {
@@ -654,6 +689,32 @@ class AudioWebSocketClient {
 
   disconnect() {
     console.log('[DISCONNECT] Disconnecting WebSocket');
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      console.log('[DISCONNECT] Sending disconnect event first');
+      // Send disconnect event to server to trigger audio merge and get download URL
+      try {
+        this.ws.send(JSON.stringify({ event: 'disconnect' }));
+        this.log('Requesting session end...', 'info');
+        // Don't close immediately - wait for session.ended event
+        // Set a timeout to force close if server doesn't respond
+        this.disconnectTimeout = setTimeout(() => {
+          console.log('[DISCONNECT] Timeout waiting for session.ended, forcing close');
+          this.forceClose();
+        }, 5000);
+      } catch (error) {
+        console.error('[DISCONNECT] Error sending disconnect event:', error);
+        this.forceClose();
+      }
+    } else {
+      this.forceClose();
+    }
+  }
+
+  forceClose() {
+    if (this.disconnectTimeout) {
+      clearTimeout(this.disconnectTimeout);
+      this.disconnectTimeout = null;
+    }
     if (this.ws) {
       console.log('[DISCONNECT] Closing WebSocket, readyState:', this.ws.readyState);
       this.ws.close();

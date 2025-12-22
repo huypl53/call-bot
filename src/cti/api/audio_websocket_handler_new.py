@@ -31,8 +31,13 @@ from cti.agents.realtime_agent_orchestrator import RealtimeAgentOrchestrator
 from cti.config.constants import LOG_EVENT_TYPES
 from cti.config.prompts import SYSTEM_MESSAGE
 from cti.config.settings import settings
-from cti.core.connection_context import get_connection_language, record_audio
+from cti.core.connection_context import (
+    get_audio_record_folder,
+    get_connection_language,
+    record_audio,
+)
 from cti.core.session_manager import SessionManager
+from cti.services.audio_merge_service import AudioMergeService
 from cti.services.tool_service import ToolService
 from cti.tools.delegation import DelegateToAgentTool
 from langsmith.wrappers import wrap_openai
@@ -72,52 +77,16 @@ class AudioWebSocketHandler:
         #     self.tool_service, self.websocket_base_url
         # )
         # self.tool_service.register_tool(DelegateToAgentTool(self.agent_orchestrator))
-        # self.root_agent_instructions = str(SYSTEM_MESSAGE)
-        self.root_agent_instructions = (
-            "ROLE:\n"
-            "- Bạn là Root Call Agent, chịu trách nhiệm thoại với khách và giữ websocket ổn định.\n"
-            "\n"
-            "STYLE:\n"
-            "- Nói ngắn gọn, thân thiện, hỏi từng bước một.\n"
-            "- Không đọc JSON thô; luôn tóm tắt kết quả tool bằng ngôn ngữ tự nhiên.\n"
-            "- Không tự suy diễn dữ liệu thiếu; thiếu gì thì hỏi lại.\n"
-            "\n"
-            "FLOW (bám sát sơ đồ):\n"
-            "1) Start -> hỏi khách có đặt cho hôm nay không.\n"
-            "   - Nếu Có -> hỏi chỉ định nhân viên (gợi ý nhân viên nữ) -> hỏi giờ bắt đầu & thời lượng gói.\n"
-            "   - Nếu Không/Ngày khác -> xác nhận ngày khác -> hỏi ngày/giờ (I) -> quay lại hỏi nhân viên (D) -> hỏi giờ bắt đầu & thời lượng gói.\n"
-            "2) Hỏi địa điểm (Hp):\n"
-            "   - Có địa điểm -> xác nhận lại (H2).\n"
-            "   - Không -> nói sẽ sắp xếp phù hợp (H3).\n"
-            "3) Xác nhận thời gian & gói (J) -> nói sẽ kiểm tra ngay và chủ động gợi ý phương án phù hợp (không để khách chờ lâu) -> kiểm tra trống (Kp).\n"
-            "4) Nếu Kp = YES:\n"
-            "   - Hỏi tùy chọn/dịch vụ bổ sung (S).\n"
-            "     * Hỏi danh sách -> giới thiệu rồi quay lại S (S3 -> S).\n"
-            "     * Tùy chọn không có -> xin lỗi rồi quay lại S (F2 -> S).\n"
-            "     * Có tùy chọn cụ thể -> xác nhận (S2) -> tiếp.\n"
-            "   - Hỏi thanh toán (F1) -> xin tên (W) -> nhắc lại xác nhận (P) -> kết thúc (Q).\n"
-            "5) Nếu Kp = NO:\n"
-            "   - Hỏi có đổi giờ khác không (Mp).\n"
-            "     * YES -> đề xuất khung giờ mới (N) -> quay lại Kp.\n"
-            "     * NO/Hết chỗ cả ngày -> xin lỗi (O) -> hỏi ngày khác (R).\n"
-            "       - YES -> hỏi ngày/giờ mới (I2) -> đi thẳng tới J (không quay lại D nếu đã có nhân viên).\n"
-            "       - NO -> kết thúc.\n"
-            "\n"
-            "TOOLS:\n"
-            "- get_available_employees: kiểm tra còn chỗ theo startTime/endTime; dùng khi khách chỉ định nhân viên hoặc muốn gợi ý nhân viên phù hợp.\n"
-            "- get_department_list: khi tên địa điểm mơ hồ, liệt kê để xác nhận.\n"
-            "- get_service_list: khi cần map thời lượng gói sang serviceId hoặc khi khách hỏi danh sách tùy chọn/dịch vụ bổ sung.\n"
-            "- get_employee_list: chỉ dùng khi khách muốn xem danh sách nhân viên.\n"
-            "- create_booking: chỉ gọi khi đã có startTime, endTime, serviceId, employeeId, customerName; thêm options/departmentId/storeName/paymentMethod nếu có.\n"
-            "\n"
-            "TIME FORMAT:\n"
-            "- get_available_employees dùng 'YYYY-MM-DD HH:mm'; create_booking dùng 'YYYY-MM-DD HH:mm:ss'."
-        )
+        self.root_agent_instructions = str(SYSTEM_MESSAGE)
 
     async def handle_connection(self, websocket: WebSocket):
         """Main handler for WebSocket connections."""
         logger.info("Audio client connected")
         await websocket.accept()
+
+        # Get connection_id for audio download URL
+        audio_folder = get_audio_record_folder()
+        connection_id = audio_folder.name if audio_folder else None
 
         try:
             client = AsyncOpenAI(
@@ -144,7 +113,9 @@ class AudioWebSocketHandler:
                         self._realtime_session_loop(connection, websocket, state)
                     ),
                     asyncio.create_task(
-                        self._client_message_loop(websocket, connection, state)
+                        self._client_message_loop(
+                            websocket, connection, state, connection_id
+                        )
                     ),
                 ]
 
@@ -193,6 +164,7 @@ class AudioWebSocketHandler:
         websocket: WebSocket,
         connection: AsyncRealtimeConnection,
         state: ConnectionState,
+        connection_id: Optional[str] = None,
     ):
         """Listen for messages from client WebSocket and handle them."""
         try:
@@ -242,7 +214,7 @@ class AudioWebSocketHandler:
                         continue
 
                     await self._handle_client_message(
-                        message, connection, websocket, state
+                        message, connection, websocket, state, connection_id
                     )
 
                 except (KeyError, ValueError, TypeError) as exc:
@@ -321,19 +293,31 @@ class AudioWebSocketHandler:
         if event_type == "response.done":
             state.is_response_active = False
             state.current_response_id = None
-            logger.info("Response done detected")
+            logger.info(f"Response done detected. OpenAI chunks: {len(state.openai_audio_chunks)}, Client chunks: {len(state.client_audio_chunks)}")
 
             if state.openai_audio_chunks:
-                complete_audio = "".join(state.openai_audio_chunks)
+                # Decode each base64 chunk, concatenate bytes, then re-encode
+                complete_audio_bytes = b"".join(
+                    base64.b64decode(chunk) for chunk in state.openai_audio_chunks
+                )
+                complete_audio = base64.b64encode(complete_audio_bytes).decode("utf-8")
                 record_audio(complete_audio, "openai", state.latest_media_timestamp)
+                logger.info(f"Saved OpenAI audio: {len(complete_audio_bytes)} bytes from {len(state.openai_audio_chunks)} chunks")
                 state.openai_audio_chunks.clear()
 
             if state.client_audio_chunks:
-                complete_client_audio = "".join(state.client_audio_chunks)
+                # Decode each base64 chunk, concatenate bytes, then re-encode
+                complete_audio_bytes = b"".join(
+                    base64.b64decode(chunk) for chunk in state.client_audio_chunks
+                )
+                complete_client_audio = base64.b64encode(complete_audio_bytes).decode("utf-8")
                 record_audio(
                     complete_client_audio, "client", state.latest_media_timestamp
                 )
+                logger.info(f"Saved client audio: {len(complete_audio_bytes)} bytes from {len(state.client_audio_chunks)} chunks")
                 state.client_audio_chunks.clear()
+            else:
+                logger.warning("No client audio chunks to save on response.done")
             return
 
         if event_type == "response.cancelled":
@@ -385,6 +369,7 @@ class AudioWebSocketHandler:
         connection: AsyncRealtimeConnection,
         websocket: WebSocket,
         state: ConnectionState,
+        connection_id: str = None,
     ):
         """Handle incoming messages from client."""
         event_type = message.get("event")
@@ -395,6 +380,8 @@ class AudioWebSocketHandler:
             await self._handle_start_event(message, state)
         elif event_type == "text":
             await self._handle_text_message(message, websocket, connection)
+        elif event_type == "disconnect":
+            await self._handle_disconnect_event(websocket, state, connection_id)
         elif event_type in ("pause", "resume", "stop", "clear"):
             await self._handle_control_message(message, connection, websocket, state)
 
@@ -415,6 +402,9 @@ class AudioWebSocketHandler:
         if payload:
             state.latest_media_timestamp = timestamp or state.latest_media_timestamp
             state.client_audio_chunks.append(payload)
+            # Log every 10th chunk to avoid flooding
+            if len(state.client_audio_chunks) % 10 == 1:
+                logger.info(f"Client audio chunks accumulated: {len(state.client_audio_chunks)}")
             await connection.input_audio_buffer.append(audio=payload)
 
     async def _handle_start_event(self, message: Dict, state: ConnectionState):
@@ -491,6 +481,80 @@ class AudioWebSocketHandler:
                 logger.warning(
                     f"Error clearing input buffer: {exc}", extra={"handler": "file"}
                 )
+
+    async def _handle_disconnect_event(
+        self,
+        websocket: WebSocket,
+        state: ConnectionState,
+        connection_id: str = None,
+    ):
+        """Handle disconnect event from client - merge audio and send download URL."""
+        logger.info("Received disconnect event from client")
+
+        # Save any remaining audio chunks before merging
+        if state.openai_audio_chunks:
+            # Decode each base64 chunk, concatenate bytes, then re-encode
+            complete_audio_bytes = b"".join(
+                base64.b64decode(chunk) for chunk in state.openai_audio_chunks
+            )
+            complete_audio = base64.b64encode(complete_audio_bytes).decode("utf-8")
+            record_audio(complete_audio, "openai", state.latest_media_timestamp)
+            state.openai_audio_chunks.clear()
+            logger.info("Saved remaining OpenAI audio chunks")
+
+        if state.client_audio_chunks:
+            # Decode each base64 chunk, concatenate bytes, then re-encode
+            complete_audio_bytes = b"".join(
+                base64.b64decode(chunk) for chunk in state.client_audio_chunks
+            )
+            complete_client_audio = base64.b64encode(complete_audio_bytes).decode("utf-8")
+            record_audio(complete_client_audio, "client", state.latest_media_timestamp)
+            state.client_audio_chunks.clear()
+            logger.info("Saved remaining client audio chunks")
+
+        if connection_id:
+            try:
+                audio_service = AudioMergeService()
+                merged_path = audio_service.merge_audio_files(connection_id)
+
+                if merged_path:
+                    audio_url = f"/audio/{connection_id}/download"
+                    await websocket.send_json(
+                        {
+                            "event": "session.ended",
+                            "audio_download_url": audio_url,
+                            "connection_id": connection_id,
+                        }
+                    )
+                    logger.info(f"Sent audio download URL: {audio_url}")
+                else:
+                    await websocket.send_json(
+                        {
+                            "event": "session.ended",
+                            "audio_download_url": None,
+                            "connection_id": connection_id,
+                        }
+                    )
+                    logger.info(
+                        "No audio files to merge, sent session.ended without URL"
+                    )
+            except Exception as exc:
+                logger.error(f"Failed to merge audio or send URL: {exc}")
+                await websocket.send_json(
+                    {
+                        "event": "session.ended",
+                        "audio_download_url": None,
+                        "connection_id": connection_id,
+                        "error": str(exc),
+                    }
+                )
+        else:
+            await websocket.send_json(
+                {
+                    "event": "session.ended",
+                    "audio_download_url": None,
+                }
+            )
 
     async def _handle_speech_started(
         self,

@@ -43,7 +43,7 @@ SYSTEM_MESSAGES = {
         "- get_available_employees: kiểm tra còn chỗ theo startTime/endTime; dùng khi khách chỉ định nhân viên hoặc muốn gợi ý nhân viên phù hợp.\n"
         "- get_department_list: khi tên địa điểm mơ hồ, liệt kê để xác nhận.\n"
         "- get_service_list: khi cần map thời lượng gói sang serviceId hoặc khi khách hỏi danh sách tùy chọn/dịch vụ bổ sung.\n"
-        "- get_employee_list: chỉ dùng khi khách muốn xem danh sách nhân viên.\n"
+        "- get_employee_list: dùng khi khách muốn xem danh sách nhân viên.\n"
         "- create_booking: chỉ gọi khi đã có startTime, endTime, serviceId, employeeId, customerName; thêm options/departmentId/storeName/paymentMethod nếu có.\n"
         "\n"
         "TIME FORMAT:\n"

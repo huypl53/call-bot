@@ -54,7 +54,7 @@ class WebSocketHandler:
         self.agent_orchestrator = RealtimeAgentOrchestrator(
             self.tool_service, self.websocket_base_url
         )
-        self.tool_service.register_tool(DelegateToAgentTool(self.agent_orchestrator))
+        # self.tool_service.register_tool(DelegateToAgentTool(self.agent_orchestrator))
         self.root_agent_instructions = (
             "Bạn là Root Call Agent, chịu trách nhiệm thoại với khách và giữ websocket Twilio ổn định. "
             "Luôn nói ngắn gọn, thân thiện, hỏi từng bước một. "

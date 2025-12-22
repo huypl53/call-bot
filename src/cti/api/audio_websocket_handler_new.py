@@ -34,7 +34,6 @@ from cti.config.settings import settings
 from cti.core.connection_context import get_connection_language, record_audio
 from cti.core.session_manager import SessionManager
 from cti.services.tool_service import ToolService
-from cti.services.tts_service import TTSService
 from cti.tools.delegation import DelegateToAgentTool
 from langsmith.wrappers import wrap_openai
 
@@ -68,7 +67,6 @@ class AudioWebSocketHandler:
     def __init__(self):
         """Initialize the audio websocket handler."""
         self.tool_service = ToolService()
-        self.tts_service = TTSService()
         self.websocket_base_url = self._build_websocket_base_url()
         # self.agent_orchestrator = RealtimeAgentOrchestrator(
         #     self.tool_service, self.websocket_base_url

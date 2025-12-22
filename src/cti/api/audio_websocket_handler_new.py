@@ -293,7 +293,9 @@ class AudioWebSocketHandler:
         if event_type == "response.done":
             state.is_response_active = False
             state.current_response_id = None
-            logger.info(f"Response done detected. OpenAI chunks: {len(state.openai_audio_chunks)}, Client chunks: {len(state.client_audio_chunks)}")
+            logger.info(
+                f"Response done detected. OpenAI chunks: {len(state.openai_audio_chunks)}, Client chunks: {len(state.client_audio_chunks)}"
+            )
 
             if state.openai_audio_chunks:
                 # Decode each base64 chunk, concatenate bytes, then re-encode
@@ -302,7 +304,9 @@ class AudioWebSocketHandler:
                 )
                 complete_audio = base64.b64encode(complete_audio_bytes).decode("utf-8")
                 record_audio(complete_audio, "openai", state.latest_media_timestamp)
-                logger.info(f"Saved OpenAI audio: {len(complete_audio_bytes)} bytes from {len(state.openai_audio_chunks)} chunks")
+                logger.info(
+                    f"Saved OpenAI audio: {len(complete_audio_bytes)} bytes from {len(state.openai_audio_chunks)} chunks"
+                )
                 state.openai_audio_chunks.clear()
 
             if state.client_audio_chunks:
@@ -310,11 +314,15 @@ class AudioWebSocketHandler:
                 complete_audio_bytes = b"".join(
                     base64.b64decode(chunk) for chunk in state.client_audio_chunks
                 )
-                complete_client_audio = base64.b64encode(complete_audio_bytes).decode("utf-8")
+                complete_client_audio = base64.b64encode(complete_audio_bytes).decode(
+                    "utf-8"
+                )
                 record_audio(
                     complete_client_audio, "client", state.latest_media_timestamp
                 )
-                logger.info(f"Saved client audio: {len(complete_audio_bytes)} bytes from {len(state.client_audio_chunks)} chunks")
+                logger.info(
+                    f"Saved client audio: {len(complete_audio_bytes)} bytes from {len(state.client_audio_chunks)} chunks"
+                )
                 state.client_audio_chunks.clear()
             else:
                 logger.warning("No client audio chunks to save on response.done")
@@ -403,8 +411,8 @@ class AudioWebSocketHandler:
             state.latest_media_timestamp = timestamp or state.latest_media_timestamp
             state.client_audio_chunks.append(payload)
             # Log every 10th chunk to avoid flooding
-            if len(state.client_audio_chunks) % 10 == 1:
-                logger.info(f"Client audio chunks accumulated: {len(state.client_audio_chunks)}")
+            # if len(state.client_audio_chunks) % 10 == 1:
+            #     logger.info(f"Client audio chunks accumulated: {len(state.client_audio_chunks)}")
             await connection.input_audio_buffer.append(audio=payload)
 
     async def _handle_start_event(self, message: Dict, state: ConnectionState):
@@ -507,7 +515,9 @@ class AudioWebSocketHandler:
             complete_audio_bytes = b"".join(
                 base64.b64decode(chunk) for chunk in state.client_audio_chunks
             )
-            complete_client_audio = base64.b64encode(complete_audio_bytes).decode("utf-8")
+            complete_client_audio = base64.b64encode(complete_audio_bytes).decode(
+                "utf-8"
+            )
             record_audio(complete_client_audio, "client", state.latest_media_timestamp)
             state.client_audio_chunks.clear()
             logger.info("Saved remaining client audio chunks")

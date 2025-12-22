@@ -512,7 +512,7 @@ class AudioWebSocketHandler:
             return
 
         async def _interrupt_bot_voice():
-            await asyncio.sleep(BOT_INTERRUPT_DELAY)
+            # await asyncio.sleep(BOT_INTERRUPT_DELAY)
             await websocket.send_json({"event": "clear"})
 
         logger.info("Speech started detected", extra={"handler": "file"})

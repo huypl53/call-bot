@@ -427,7 +427,10 @@ class AudioWebSocketClient {
     }
 
     const eventType = data.event;
-    console.log('[HANDLE] Event type:', eventType);
+    if (eventType !== 'audio') {
+      console.log('[HANDLE] Event type:', eventType);
+
+    }
 
     if (!eventType) {
       console.error('[HANDLE] Message missing event type', data);

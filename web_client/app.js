@@ -27,19 +27,30 @@ class AudioWebSocketClient {
     this.audioSources = []; // Track active audio sources for immediate stop
     this.lastAudioLevel = 0;
     this.targetSampleRate = 24000; // Server-required sample rate
+    this.gainMultiplier = 3.0; // Boost client audio volume
+    this.micMonitorDelay = 1.25; // Seconds of delay for mic test playback
+    this.micMonitorGain = 1.2; // Boost monitor volume (use headphones to avoid feedback)
+    this.isMicMonitorActive = false;
+    this.micDelayNode = null;
+    this.micGainNode = null;
+    this.micSource = null;
   }
 
-  log(message, type = 'info') {
+  log(message, type = "info") {
     const timestamp = new Date().toLocaleTimeString();
     const logMessage = `[${timestamp}] ${message}`;
 
     // Log to console with appropriate level
-    const consoleMethod = type === 'error' ? 'error' : type === 'success' ? 'log' : 'info';
+    const consoleMethod = type === "error"
+      ? "error"
+      : type === "success"
+        ? "log"
+        : "info";
     console[consoleMethod](`[${type.toUpperCase()}] ${logMessage}`);
 
     // Also log to UI
-    const logDiv = document.getElementById('log');
-    const entry = document.createElement('div');
+    const logDiv = document.getElementById("log");
+    const entry = document.createElement("div");
     entry.className = `log-entry ${type}`;
     entry.textContent = logMessage;
     logDiv.appendChild(entry);
@@ -47,17 +58,17 @@ class AudioWebSocketClient {
   }
 
   updateStatus(status, message) {
-    const statusDiv = document.getElementById('status');
+    const statusDiv = document.getElementById("status");
     statusDiv.className = `status ${status}`;
     statusDiv.textContent = message;
   }
 
   async connect(wsUrl, sessionId) {
     try {
-      this.updateStatus('connecting', 'Connecting...');
-      this.log(`Connecting to ${wsUrl}...`, 'info');
-      console.log('[CONNECT] WebSocket URL:', wsUrl);
-      console.log('[CONNECT] Session ID:', sessionId);
+      this.updateStatus("connecting", "Connecting...");
+      this.log(`Connecting to ${wsUrl}...`, "info");
+      console.log("[CONNECT] WebSocket URL:", wsUrl);
+      console.log("[CONNECT] Session ID:", sessionId);
 
       // Store WebSocket URL to derive HTTP URL for downloads
       this.wsUrl = wsUrl;
@@ -65,18 +76,21 @@ class AudioWebSocketClient {
       // Create WebSocket - match demo.py behavior exactly
       this.ws = new WebSocket(wsUrl);
       // Ensure we send text frames, not binary
-      this.ws.binaryType = 'arraybuffer'; // Only affects receiving, not sending
+      this.ws.binaryType = "arraybuffer"; // Only affects receiving, not sending
       this.sessionId = sessionId;
       this.sendErrorLogged = false;
       this.lastSendTime = 0;
-      console.log('[CONNECT] WebSocket created, readyState:', this.ws.readyState);
+      console.log(
+        "[CONNECT] WebSocket created, readyState:",
+        this.ws.readyState,
+      );
 
       this.ws.onopen = () => {
-        console.log('[WS] WebSocket opened, readyState:', this.ws.readyState);
-        this.log('WebSocket connected', 'success');
-        this.updateStatus('connected', 'Connected');
-        document.getElementById('connectBtn').disabled = true;
-        document.getElementById('disconnectBtn').disabled = false;
+        console.log("[WS] WebSocket opened, readyState:", this.ws.readyState);
+        this.log("WebSocket connected", "success");
+        this.updateStatus("connected", "Connected");
+        document.getElementById("connectBtn").disabled = true;
+        document.getElementById("disconnectBtn").disabled = false;
 
         // Send start message immediately after connection (like demo.py)
         this.sendStartMessage();
@@ -89,7 +103,7 @@ class AudioWebSocketClient {
           // console.log('[WS] Message received, type:', typeof messageData, 'isArrayBuffer:', messageData instanceof ArrayBuffer, 'isBlob:', messageData instanceof Blob);
 
           // Handle different data types the server might send
-          if (typeof messageData === 'string') {
+          if (typeof messageData === "string") {
             // Normal case: text message
             // console.log('[WS] Received string message, length:', messageData.length);
             // console.log('[WS] Raw message (first 200 chars):', messageData.substring(0, 200));
@@ -98,70 +112,97 @@ class AudioWebSocketClient {
               // console.log('[WS] Parsed JSON:', data);
               this.handleMessage(data);
             } catch (parseError) {
-              console.error('[WS] Failed to parse JSON:', parseError);
-              console.error('[WS] Raw message:', messageData);
-              this.log(`Failed to parse JSON message: ${parseError.message}`, 'error');
-              this.log(`Raw message: ${messageData.substring(0, 100)}...`, 'error');
+              console.error("[WS] Failed to parse JSON:", parseError);
+              console.error("[WS] Raw message:", messageData);
+              this.log(
+                `Failed to parse JSON message: ${parseError.message}`,
+                "error",
+              );
+              this.log(
+                `Raw message: ${messageData.substring(0, 100)}...`,
+                "error",
+              );
             }
           } else if (messageData instanceof ArrayBuffer) {
             // Binary data received - try to decode as text
-            console.log('[WS] Received ArrayBuffer, size:', messageData.byteLength);
+            console.log(
+              "[WS] Received ArrayBuffer, size:",
+              messageData.byteLength,
+            );
             try {
-              const text = new TextDecoder('utf-8', { fatal: false }).decode(messageData);
-              console.log('[WS] Decoded text:', text.substring(0, 200));
+              const text = new TextDecoder("utf-8", { fatal: false }).decode(
+                messageData,
+              );
+              console.log("[WS] Decoded text:", text.substring(0, 200));
               const data = JSON.parse(text);
-              console.log('[WS] Parsed JSON from binary:', data);
+              console.log("[WS] Parsed JSON from binary:", data);
               this.handleMessage(data);
             } catch (decodeError) {
-              console.error('[WS] Failed to decode binary:', decodeError);
-              this.log(`Received binary data that cannot be decoded: ${decodeError.message}`, 'error');
+              console.error("[WS] Failed to decode binary:", decodeError);
+              this.log(
+                `Received binary data that cannot be decoded: ${decodeError.message}`,
+                "error",
+              );
             }
           } else if (messageData instanceof Blob) {
             // Blob received - read as text
-            console.log('[WS] Received Blob, size:', messageData.size);
-            messageData.text().then(text => {
-              console.log('[WS] Blob text:', text.substring(0, 200));
+            console.log("[WS] Received Blob, size:", messageData.size);
+            messageData.text().then((text) => {
+              console.log("[WS] Blob text:", text.substring(0, 200));
               try {
                 const data = JSON.parse(text);
-                console.log('[WS] Parsed JSON from blob:', data);
+                console.log("[WS] Parsed JSON from blob:", data);
                 this.handleMessage(data);
               } catch (parseError) {
-                console.error('[WS] Failed to parse blob JSON:', parseError);
-                this.log(`Failed to parse blob message: ${parseError.message}`, 'error');
+                console.error("[WS] Failed to parse blob JSON:", parseError);
+                this.log(
+                  `Failed to parse blob message: ${parseError.message}`,
+                  "error",
+                );
               }
-            }).catch(err => {
-              console.error('[WS] Error reading blob:', err);
-              this.log(`Error reading blob: ${err.message}`, 'error');
+            }).catch((err) => {
+              console.error("[WS] Error reading blob:", err);
+              this.log(`Error reading blob: ${err.message}`, "error");
             });
           } else {
-            console.error('[WS] Unexpected message type:', typeof messageData, messageData);
-            this.log(`Unexpected message type: ${typeof messageData}`, 'error');
+            console.error(
+              "[WS] Unexpected message type:",
+              typeof messageData,
+              messageData,
+            );
+            this.log(`Unexpected message type: ${typeof messageData}`, "error");
           }
         } catch (error) {
-          console.error('[WS] Error handling message:', error);
-          this.log(`Error handling message: ${error.message}`, 'error');
+          console.error("[WS] Error handling message:", error);
+          this.log(`Error handling message: ${error.message}`, "error");
         }
       };
 
       this.ws.onerror = (error) => {
-        console.error('[WS] WebSocket error:', error);
-        console.error('[WS] Error event:', error);
-        this.log(`WebSocket error occurred`, 'error');
-        this.updateStatus('disconnected', 'Connection Error');
+        console.error("[WS] WebSocket error:", error);
+        console.error("[WS] Error event:", error);
+        this.log(`WebSocket error occurred`, "error");
+        this.updateStatus("disconnected", "Connection Error");
       };
 
       this.ws.onclose = (event) => {
-        console.log('[WS] WebSocket closed, code:', event.code, 'reason:', event.reason, 'wasClean:', event.wasClean);
-        this.log('WebSocket closed', 'info');
-        this.updateStatus('disconnected', 'Disconnected');
-        document.getElementById('connectBtn').disabled = false;
-        document.getElementById('disconnectBtn').disabled = true;
+        console.log(
+          "[WS] WebSocket closed, code:",
+          event.code,
+          "reason:",
+          event.reason,
+          "wasClean:",
+          event.wasClean,
+        );
+        this.log("WebSocket closed", "info");
+        this.updateStatus("disconnected", "Disconnected");
+        document.getElementById("connectBtn").disabled = false;
+        document.getElementById("disconnectBtn").disabled = true;
         this.stopRecording();
       };
-
     } catch (error) {
-      this.log(`Connection error: ${error.message}`, 'error');
-      this.updateStatus('disconnected', 'Connection Failed');
+      this.log(`Connection error: ${error.message}`, "error");
+      this.updateStatus("disconnected", "Connection Failed");
     }
   }
 
@@ -170,70 +211,97 @@ class AudioWebSocketClient {
       try {
         // Match demo.py exactly: send JSON string as TEXT frame
         const message = {
-          event: 'start',
-          session_id: String(this.sessionId || 'browser_session')
+          event: "start",
+          session_id: String(this.sessionId || "browser_session"),
         };
         const jsonString = JSON.stringify(message);
-        console.log('[SEND] Start message:', message);
-        console.log('[SEND] JSON string:', jsonString);
-        console.log('[SEND] JSON string type:', typeof jsonString, 'length:', jsonString.length);
+        console.log("[SEND] Start message:", message);
+        console.log("[SEND] JSON string:", jsonString);
+        console.log(
+          "[SEND] JSON string type:",
+          typeof jsonString,
+          "length:",
+          jsonString.length,
+        );
         // Validate JSON is valid before sending
         JSON.parse(jsonString); // Test parse
         // Explicitly send as string to ensure text frame (not binary)
         // In browser WebSocket API, sending a string always creates a text frame
         this.ws.send(jsonString);
-        console.log('[SEND] Start message sent successfully as TEXT frame');
-        this.log('Sent start message', 'info');
+        console.log("[SEND] Start message sent successfully as TEXT frame");
+        this.log("Sent start message", "info");
         // Start recording after sending start message
         this.startRecording();
       } catch (error) {
-        console.error('[SEND] Error sending start message:', error);
-        this.log(`Error sending start message: ${error.message}`, 'error');
+        console.error("[SEND] Error sending start message:", error);
+        this.log(`Error sending start message: ${error.message}`, "error");
       }
     } else {
-      console.warn('[SEND] Cannot send start message, WebSocket not open, readyState:', this.ws?.readyState);
+      console.warn(
+        "[SEND] Cannot send start message, WebSocket not open, readyState:",
+        this.ws?.readyState,
+      );
     }
   }
 
   async startRecording() {
     try {
-      // Request microphone access with 24kHz sample rate directly
-      this.mediaStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          sampleRate: 24000,
-          channelCount: 1,
-          echoCancellation: true,
-          noiseSuppression: true,
-        }
-      });
+      // Request microphone access with 24kHz sample rate
+      // Disable autoGainControl which can lower volume
+      if (!this.mediaStream) {
+        this.mediaStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            sampleRate: 24000,
+            channelCount: 1,
+            echoCancellation: true, // Keep to prevent echo
+            noiseSuppression: false, // Disable - can reduce volume
+            autoGainControl: false, // Disable - major cause of low volume
+          },
+        });
+      }
 
-      this.log('Microphone access granted', 'success');
+      this.log("Microphone access granted", "success");
 
       // Create audio context at 24kHz - no resampling needed!
-      this.audioContext = new (window.AudioContext || window.webkitAudioContext)({
-        sampleRate: 24000,
-        latencyHint: 'interactive'
-      });
+      if (!this.audioContext) {
+        this.audioContext =
+          new (window.AudioContext || window.webkitAudioContext)({
+            sampleRate: 24000,
+            latencyHint: "interactive",
+          });
+      }
 
-      if (this.audioContext.state === 'suspended') {
+      if (this.audioContext.state === "suspended") {
         await this.audioContext.resume();
       }
 
-      console.log('[AUDIO] Context sample rate:', this.audioContext.sampleRate);
+      console.log("[AUDIO] Context sample rate:", this.audioContext.sampleRate);
 
       // Check for AudioWorklet support
       if (!this.audioContext.audioWorklet) {
-        throw new Error('AudioWorklet API not supported in this browser.');
+        throw new Error("AudioWorklet API not supported in this browser.");
       }
 
       // Load the PCM recorder worklet
-      await this.audioContext.audioWorklet.addModule('pcm-recorder.worklet.js');
+      await this.audioContext.audioWorklet.addModule("pcm-recorder.worklet.js");
 
       // Create source from microphone
-      const source = this.audioContext.createMediaStreamSource(this.mediaStream);
+      const source = this.audioContext.createMediaStreamSource(
+        this.mediaStream,
+      );
+      this.micSource = source;
 
       // Create AudioWorkletNode for recording
-      this.recorderNode = new AudioWorkletNode(this.audioContext, 'pcm-recorder');
+      this.recorderNode = new AudioWorkletNode(
+        this.audioContext,
+        "pcm-recorder",
+      );
+
+      // Set the gain multiplier
+      this.recorderNode.port.postMessage({
+        type: "set_gain",
+        value: this.gainMultiplier,
+      });
 
       // Handle audio chunks from the worklet
       this.recorderNode.port.onmessage = (event) => {
@@ -252,16 +320,16 @@ class AudioWebSocketClient {
         try {
           const base64 = this.arrayBufferToBase64(chunk.buffer);
           const message = {
-            event: 'audio',
+            event: "audio",
             payload: base64,
             timestamp: Date.now(),
-            format: 'pcm16'
+            format: "pcm16",
           };
           this.ws.send(JSON.stringify(message));
         } catch (error) {
           if (!this.sendErrorLogged) {
-            console.error('[SEND] Error sending audio:', error);
-            this.log(`Error sending audio: ${error.message}`, 'error');
+            console.error("[SEND] Error sending audio:", error);
+            this.log(`Error sending audio: ${error.message}`, "error");
             this.sendErrorLogged = true;
           }
         }
@@ -272,17 +340,19 @@ class AudioWebSocketClient {
       this.recorderNode.connect(this.audioContext.destination);
 
       this.isRecording = true;
-      this.log('Recording started (AudioWorklet)', 'success');
-
+      this.log("Recording started (AudioWorklet)", "success");
     } catch (error) {
-      console.error('[AUDIO] Failed to start recording:', error);
-      this.log(`Failed to start recording: ${error.message}`, 'error');
-      this.updateStatus('disconnected', 'Microphone Access Denied');
+      console.error("[AUDIO] Failed to start recording:", error);
+      this.log(`Failed to start recording: ${error.message}`, "error");
+      this.updateStatus("disconnected", "Microphone Access Denied");
     }
   }
 
   stopRecording() {
     this.isRecording = false;
+
+    // Stop mic monitor before tearing down audio graph
+    this.stopMicMonitor();
 
     if (this.recorderNode) {
       this.recorderNode.port.onmessage = null;
@@ -298,7 +368,7 @@ class AudioWebSocketClient {
     }
 
     if (this.mediaStream) {
-      this.mediaStream.getTracks().forEach(track => track.stop());
+      this.mediaStream.getTracks().forEach((track) => track.stop());
       this.mediaStream = null;
     }
 
@@ -306,6 +376,7 @@ class AudioWebSocketClient {
       this.audioContext.close();
       this.audioContext = null;
     }
+    this.micSource = null;
 
     if (this.animationFrame) {
       cancelAnimationFrame(this.animationFrame);
@@ -315,7 +386,7 @@ class AudioWebSocketClient {
     // Clear pending audio data
     this.pendingAudioData = [];
 
-    this.log('Recording stopped', 'info');
+    this.log("Recording stopped", "info");
   }
 
   calculateAudioLevel(audioData) {
@@ -331,14 +402,14 @@ class AudioWebSocketClient {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       try {
         const message = {
-          event: 'stop'
+          event: "stop",
         };
         const jsonString = JSON.stringify(message);
         this.ws.send(jsonString);
-        console.log('[SEND] Stop event sent to interrupt assistant');
-        this.log('Interrupting assistant', 'info');
+        console.log("[SEND] Stop event sent to interrupt assistant");
+        this.log("Interrupting assistant", "info");
       } catch (error) {
-        console.error('[SEND] Error sending stop event:', error);
+        console.error("[SEND] Error sending stop event:", error);
       }
     }
   }
@@ -372,7 +443,7 @@ class AudioWebSocketClient {
 
   arrayBufferToBase64(buffer) {
     const bytes = new Uint8Array(buffer);
-    let binary = '';
+    let binary = "";
     for (let i = 0; i < bytes.byteLength; i++) {
       binary += String.fromCharCode(bytes[i]);
     }
@@ -392,53 +463,55 @@ class AudioWebSocketClient {
     // console.log('[HANDLE] Received message:', data);
 
     // Validate message structure
-    if (!data || typeof data !== 'object') {
-      console.error('[HANDLE] Invalid message format: not an object', data);
-      this.log('Invalid message format: not an object', 'error');
+    if (!data || typeof data !== "object") {
+      console.error("[HANDLE] Invalid message format: not an object", data);
+      this.log("Invalid message format: not an object", "error");
       return;
     }
 
     const eventType = data.event;
-    if (eventType !== 'audio') {
-      console.log('[HANDLE] Event type:', eventType);
-
+    if (eventType !== "audio") {
+      console.log("[HANDLE] Event type:", eventType);
     }
 
     if (!eventType) {
-      console.error('[HANDLE] Message missing event type', data);
-      this.log('Message missing event type', 'error');
+      console.error("[HANDLE] Message missing event type", data);
+      this.log("Message missing event type", "error");
       return;
     }
 
-    if (eventType === 'audio') {
+    if (eventType === "audio") {
       // console.log('[HANDLE] Processing audio chunk');
       this.isAssistantSpeaking = true;
       this.handleAudioChunk(data);
-    } else if (eventType === 'response.done') {
-      console.log('[HANDLE] Response done');
+    } else if (eventType === "response.done") {
+      console.log("[HANDLE] Response done");
       this.isAssistantSpeaking = false;
-      this.log('Response complete', 'success');
+      this.log("Response complete", "success");
       // this.finishAudioPlayback();
-    } else if (eventType === 'response.cancelled') {
-      console.log('[HANDLE] Response cancelled');
+    } else if (eventType === "response.cancelled") {
+      console.log("[HANDLE] Response cancelled");
       this.isAssistantSpeaking = false;
-      this.log('Response cancelled', 'info');
+      this.log("Response cancelled", "info");
       this.stopAudioPlayback();
-    } else if (eventType === 'error') {
-      const errorMsg = data.message || 'Unknown server error';
-      console.error('[HANDLE] Server error:', errorMsg, data);
-      this.log(`Server error: ${errorMsg}`, 'error');
-    } else if (eventType === 'clear') {
-      console.log('[HANDLE] Clear event');
-      this.log('Clear event received', 'info');
+    } else if (eventType === "error") {
+      const errorMsg = data.message || "Unknown server error";
+      console.error("[HANDLE] Server error:", errorMsg, data);
+      this.log(`Server error: ${errorMsg}`, "error");
+    } else if (eventType === "clear") {
+      console.log("[HANDLE] Clear event");
+      this.log("Clear event received", "info");
       this.isAssistantSpeaking = false;
       this.stopAudioPlayback();
-    } else if (eventType === 'session.ended') {
-      console.log('[HANDLE] Session ended with audio URL:', data.audio_download_url);
+    } else if (eventType === "session.ended") {
+      console.log(
+        "[HANDLE] Session ended with audio URL:",
+        data.audio_download_url,
+      );
       this.handleSessionEnded(data);
     } else {
-      console.warn('[HANDLE] Unknown event type:', eventType, data);
-      this.log(`Unknown event type: ${eventType}`, 'info');
+      console.warn("[HANDLE] Unknown event type:", eventType, data);
+      this.log(`Unknown event type: ${eventType}`, "info");
     }
   }
 
@@ -454,11 +527,11 @@ class AudioWebSocketClient {
         // Queue the audio chunk for playback instead of playing immediately
         this.queueAudioChunk(audioData);
       } catch (error) {
-        console.error('[AUDIO] Error processing audio chunk:', error);
-        this.log(`Error processing audio chunk: ${error.message}`, 'error');
+        console.error("[AUDIO] Error processing audio chunk:", error);
+        this.log(`Error processing audio chunk: ${error.message}`, "error");
       }
     } else {
-      console.warn('[AUDIO] Audio chunk missing payload', data);
+      console.warn("[AUDIO] Audio chunk missing payload", data);
     }
   }
 
@@ -469,7 +542,7 @@ class AudioWebSocketClient {
     this.audioQueue = [];
 
     // Stop all active audio sources (legacy)
-    this.audioSources.forEach(source => {
+    this.audioSources.forEach((source) => {
       try {
         source.stop();
       } catch (e) { }
@@ -479,7 +552,7 @@ class AudioWebSocketClient {
     // Tell playback worklet to stop
     if (this.playbackNode) {
       try {
-        this.playbackNode.port.postMessage({ type: 'stop' });
+        this.playbackNode.port.postMessage({ type: "stop" });
       } catch (e) { }
     }
 
@@ -487,7 +560,93 @@ class AudioWebSocketClient {
     this.isPlayingAudio = false;
     this.nextPlayTime = 0;
 
-    console.log('[AUDIO] Playback stopped and cleared');
+    console.log("[AUDIO] Playback stopped and cleared");
+  }
+
+  async startMicMonitor() {
+    if (this.isMicMonitorActive) {
+      return;
+    }
+
+    try {
+      if (!this.mediaStream) {
+        this.mediaStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            sampleRate: 24000,
+            channelCount: 1,
+            echoCancellation: true,
+            noiseSuppression: false,
+            autoGainControl: false,
+          },
+        });
+        this.log("Microphone access granted for mic test", "success");
+      }
+
+      if (!this.audioContext) {
+        this.audioContext =
+          new (window.AudioContext || window.webkitAudioContext)({
+            sampleRate: 24000,
+            latencyHint: "interactive",
+          });
+      }
+
+      if (this.audioContext.state === "suspended") {
+        await this.audioContext.resume();
+      }
+
+      if (!this.micSource) {
+        this.micSource = this.audioContext.createMediaStreamSource(
+          this.mediaStream,
+        );
+      }
+
+      // Clean up any previous monitor graph before wiring a new one
+      this.stopMicMonitor();
+
+      this.micDelayNode = this.audioContext.createDelay(2.0);
+      this.micDelayNode.delayTime.value = this.micMonitorDelay;
+
+      this.micGainNode = this.audioContext.createGain();
+      this.micGainNode.gain.value = this.micMonitorGain;
+
+      this.micSource.connect(this.micDelayNode);
+      this.micDelayNode.connect(this.micGainNode);
+      this.micGainNode.connect(this.audioContext.destination);
+
+      this.isMicMonitorActive = true;
+      this.log(
+        `Mic test playing with ${Math.round(this.micMonitorDelay * 1000)}ms delay`,
+        "success",
+      );
+    } catch (error) {
+      console.error("[AUDIO] Failed to start mic monitor:", error);
+      this.log(`Failed to start mic test: ${error.message}`, "error");
+      this.stopMicMonitor();
+    }
+  }
+
+  stopMicMonitor() {
+    if (this.micGainNode) {
+      try {
+        this.micGainNode.disconnect();
+      } catch (e) { }
+    }
+
+    if (this.micDelayNode) {
+      try {
+        this.micDelayNode.disconnect();
+      } catch (e) { }
+    }
+
+    this.micDelayNode = null;
+    this.micGainNode = null;
+    this.isMicMonitorActive = false;
+
+    // Reset button label if present
+    const micTestBtn = document.getElementById("micTestBtn");
+    if (micTestBtn) {
+      micTestBtn.textContent = "Test Mic (Delay)";
+    }
   }
 
   async ensurePlaybackNode() {
@@ -498,31 +657,34 @@ class AudioWebSocketClient {
     if (!this.playbackInitPromise) {
       this.playbackInitPromise = (async () => {
         if (!this.playbackContext) {
-          this.playbackContext = new (window.AudioContext || window.webkitAudioContext)({
-            sampleRate: 24000,
-            latencyHint: 'interactive'
-          });
+          this.playbackContext =
+            new (window.AudioContext || window.webkitAudioContext)({
+              sampleRate: 24000,
+              latencyHint: "interactive",
+            });
         }
 
-        if (this.playbackContext.state === 'suspended') {
+        if (this.playbackContext.state === "suspended") {
           await this.playbackContext.resume();
         }
 
         if (!this.playbackContext.audioWorklet) {
-          throw new Error('AudioWorklet API not supported');
+          throw new Error("AudioWorklet API not supported");
         }
 
-        await this.playbackContext.audioWorklet.addModule('pcm-playback.worklet.js');
+        await this.playbackContext.audioWorklet.addModule(
+          "pcm-playback.worklet.js",
+        );
 
         this.playbackNode = new AudioWorkletNode(
           this.playbackContext,
-          'pcm-playback',
-          { outputChannelCount: [1] }
+          "pcm-playback",
+          { outputChannelCount: [1] },
         );
 
         this.playbackNode.port.onmessage = (event) => {
           const message = event.data;
-          if (message && message.type === 'drained') {
+          if (message && message.type === "drained") {
             this.isPlayingAudio = false;
             this.isAssistantSpeaking = false;
           }
@@ -530,7 +692,7 @@ class AudioWebSocketClient {
 
         // Configure fade duration
         const fadeSamples = Math.floor(this.playbackContext.sampleRate * 0.02);
-        this.playbackNode.port.postMessage({ type: 'config', fadeSamples });
+        this.playbackNode.port.postMessage({ type: "config", fadeSamples });
 
         this.playbackNode.connect(this.playbackContext.destination);
       })().catch((error) => {
@@ -558,7 +720,7 @@ class AudioWebSocketClient {
       await this.ensurePlaybackNode();
       this.flushPendingPlaybackChunks();
     } catch (error) {
-      console.error('[AUDIO] Failed to queue audio:', error);
+      console.error("[AUDIO] Failed to queue audio:", error);
       this.pendingPlaybackChunks = [];
     }
   }
@@ -576,13 +738,13 @@ class AudioWebSocketClient {
 
       try {
         this.playbackNode.port.postMessage(
-          { type: 'chunk', payload: chunk.buffer },
-          [chunk.buffer]
+          { type: "chunk", payload: chunk.buffer },
+          [chunk.buffer],
         );
         this.isPlayingAudio = true;
         this.isPlaying = true;
       } catch (error) {
-        console.error('[AUDIO] Failed to send chunk to worklet:', error);
+        console.error("[AUDIO] Failed to send chunk to worklet:", error);
       }
     }
   }
@@ -594,20 +756,23 @@ class AudioWebSocketClient {
 
   finishAudioPlayback() {
     if (this.audioChunks.length > 0) {
-      this.log(`Finished receiving ${this.audioChunks.length} audio chunks`, 'success');
+      this.log(
+        `Finished receiving ${this.audioChunks.length} audio chunks`,
+        "success",
+      );
       this.audioChunks = [];
     }
     // Let the queue finish playing
-    console.log('[AUDIO] Response done, queue will finish playing');
+    console.log("[AUDIO] Response done, queue will finish playing");
   }
 
   handleSessionEnded(data) {
     if (data.audio_download_url) {
       this.audioDownloadUrl = data.audio_download_url;
-      this.log('Session ended. Recording available for download.', 'success');
+      this.log("Session ended. Recording available for download.", "success");
       this.showDownloadLink(data.audio_download_url);
     } else {
-      this.log('Session ended', 'info');
+      this.log("Session ended", "info");
     }
     // Now close the WebSocket
     this.forceClose();
@@ -617,27 +782,29 @@ class AudioWebSocketClient {
     // Derive HTTP URL from WebSocket URL
     // ws://localhost:5050/audio-stream -> http://localhost:5050
     // wss://example.com/audio-stream -> https://example.com
-    let baseUrl = '';
+    let baseUrl = "";
     if (this.wsUrl) {
       try {
         const wsUrlObj = new URL(this.wsUrl);
-        const protocol = wsUrlObj.protocol === 'wss:' ? 'https:' : 'http:';
+        const protocol = wsUrlObj.protocol === "wss:" ? "https:" : "http:";
         baseUrl = `${protocol}//${wsUrlObj.host}`;
       } catch (e) {
-        console.error('[DOWNLOAD] Failed to parse WebSocket URL:', e);
+        console.error("[DOWNLOAD] Failed to parse WebSocket URL:", e);
         baseUrl = `${window.location.protocol}//${window.location.host}`;
       }
     } else {
       baseUrl = `${window.location.protocol}//${window.location.host}`;
     }
 
-    const fullUrl = audioUrl.startsWith('/') ? `${baseUrl}${audioUrl}` : audioUrl;
-    console.log('[DOWNLOAD] Full URL:', fullUrl);
+    const fullUrl = audioUrl.startsWith("/")
+      ? `${baseUrl}${audioUrl}`
+      : audioUrl;
+    console.log("[DOWNLOAD] Full URL:", fullUrl);
 
     // Create download link in the log
-    const logDiv = document.getElementById('log');
-    const entry = document.createElement('div');
-    entry.className = 'log-entry success';
+    const logDiv = document.getElementById("log");
+    const entry = document.createElement("div");
+    entry.className = "log-entry success";
     entry.innerHTML = `
       <a href="${fullUrl}" download="conversation.wav"
          style="color: #4fc1ff; text-decoration: underline; cursor: pointer;">
@@ -649,8 +816,8 @@ class AudioWebSocketClient {
   }
 
   initVisualizer() {
-    this.visualizerCanvas = document.getElementById('visualizer');
-    this.visualizerCtx = this.visualizerCanvas.getContext('2d');
+    this.visualizerCanvas = document.getElementById("visualizer");
+    this.visualizerCtx = this.visualizerCanvas.getContext("2d");
     this.visualizerCanvas.width = this.visualizerCanvas.offsetWidth;
     this.visualizerCanvas.height = this.visualizerCanvas.offsetHeight;
   }
@@ -661,11 +828,11 @@ class AudioWebSocketClient {
     const width = this.visualizerCanvas.width;
     const height = this.visualizerCanvas.height;
 
-    this.visualizerCtx.fillStyle = '#f8f9fa';
+    this.visualizerCtx.fillStyle = "#f8f9fa";
     this.visualizerCtx.fillRect(0, 0, width, height);
 
     this.visualizerCtx.lineWidth = 2;
-    this.visualizerCtx.strokeStyle = '#667eea';
+    this.visualizerCtx.strokeStyle = "#667eea";
     this.visualizerCtx.beginPath();
 
     const sliceWidth = width / audioData.length;
@@ -688,21 +855,23 @@ class AudioWebSocketClient {
   }
 
   disconnect() {
-    console.log('[DISCONNECT] Disconnecting WebSocket');
+    console.log("[DISCONNECT] Disconnecting WebSocket");
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      console.log('[DISCONNECT] Sending disconnect event first');
+      console.log("[DISCONNECT] Sending disconnect event first");
       // Send disconnect event to server to trigger audio merge and get download URL
       try {
-        this.ws.send(JSON.stringify({ event: 'disconnect' }));
-        this.log('Requesting session end...', 'info');
+        this.ws.send(JSON.stringify({ event: "disconnect" }));
+        this.log("Requesting session end...", "info");
         // Don't close immediately - wait for session.ended event
         // Set a timeout to force close if server doesn't respond
         this.disconnectTimeout = setTimeout(() => {
-          console.log('[DISCONNECT] Timeout waiting for session.ended, forcing close');
+          console.log(
+            "[DISCONNECT] Timeout waiting for session.ended, forcing close",
+          );
           this.forceClose();
         }, 5000);
       } catch (error) {
-        console.error('[DISCONNECT] Error sending disconnect event:', error);
+        console.error("[DISCONNECT] Error sending disconnect event:", error);
         this.forceClose();
       }
     } else {
@@ -716,7 +885,10 @@ class AudioWebSocketClient {
       this.disconnectTimeout = null;
     }
     if (this.ws) {
-      console.log('[DISCONNECT] Closing WebSocket, readyState:', this.ws.readyState);
+      console.log(
+        "[DISCONNECT] Closing WebSocket, readyState:",
+        this.ws.readyState,
+      );
       this.ws.close();
       this.ws = null;
     }
@@ -733,12 +905,25 @@ const client = new AudioWebSocketClient();
 client.initVisualizer();
 
 // Event listeners
-document.getElementById('connectBtn').addEventListener('click', () => {
-  const wsUrl = document.getElementById('wsUrl').value;
-  const sessionId = document.getElementById('sessionId').value;
+document.getElementById("connectBtn").addEventListener("click", () => {
+  const wsUrl = document.getElementById("wsUrl").value;
+  const sessionId = document.getElementById("sessionId").value;
   client.connect(wsUrl, sessionId);
 });
 
-document.getElementById('disconnectBtn').addEventListener('click', () => {
+document.getElementById("disconnectBtn").addEventListener("click", () => {
   client.disconnect();
+});
+
+const micTestBtn = document.getElementById("micTestBtn");
+micTestBtn.addEventListener("click", async () => {
+  if (client.isMicMonitorActive) {
+    client.stopMicMonitor();
+    micTestBtn.textContent = "Test Mic (Delay)";
+  } else {
+    await client.startMicMonitor();
+    if (client.isMicMonitorActive) {
+      micTestBtn.textContent = "Stop Mic Test";
+    }
+  }
 });

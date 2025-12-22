@@ -6,6 +6,16 @@ class PCMRecorderProcessor extends AudioWorkletProcessor {
     this.offset = 0;
     this.pendingFrames = 0;
     this.maxPendingFrames = 10;
+    // Boost volume by 2x (6dB gain)
+    this.gainMultiplier = 2.0;
+
+    // Listen for messages from main thread
+    this.port.onmessage = (event) => {
+      if (event.data.type === 'set_gain') {
+        this.gainMultiplier = event.data.value || 1.0;
+        console.log(`[WORKLET] Gain set to: ${this.gainMultiplier}`);
+      }
+    };
   }
 
   flushBuffer() {
@@ -34,6 +44,8 @@ class PCMRecorderProcessor extends AudioWorkletProcessor {
 
     for (let i = 0; i < channel.length; i++) {
       let sample = channel[i];
+      // Apply gain before clipping
+      sample = sample * this.gainMultiplier;
       sample = Math.max(-1, Math.min(1, sample));
       this.buffer[this.offset++] = sample < 0
         ? sample * 0x8000

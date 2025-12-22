@@ -58,7 +58,7 @@ class ConnectionState:
     response_start_timestamp: Optional[int] = None
     is_paused: bool = False
     last_interruption_time: int = 0
-    interruption_cooldown_ms: int = 500
+    interruption_cooldown_ms: int = 1000
     is_response_active: bool = False
     current_response_id: Optional[str] = None
     openai_audio_chunks: List[str] = field(default_factory=list)
@@ -641,10 +641,11 @@ class AudioWebSocketHandler:
                 pass
 
         logger.info("Speech started detected", extra={"handler": "file"})
-        asyncio.create_task(_interrupt_bot_voice())
+        # asyncio.create_task(_interrupt_bot_voice())
 
-        # if state.is_response_active and state.last_assistant_item:
-        if True:
+        if state.is_response_active and state.last_assistant_item:
+            # if True:
+            await _interrupt_bot_voice()
             logger.info(
                 f"User interrupting active response with id: {state.last_assistant_item}",
                 extra={"handler": "file"},

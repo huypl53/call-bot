@@ -29,11 +29,14 @@ class AudioWebSocketClient {
     this.targetSampleRate = 24000; // Server-required sample rate
     this.gainMultiplier = 3.0; // Boost client audio volume
     this.micMonitorDelay = 1.25; // Seconds of delay for mic test playback
-    this.micMonitorGain = 1.2; // Boost monitor volume (use headphones to avoid feedback)
+    this.micMonitorGain = 3.0; // Boost monitor volume (use headphones to avoid feedback)
     this.isMicMonitorActive = false;
     this.micDelayNode = null;
     this.micGainNode = null;
     this.micSource = null;
+    this.micMonitorContext = null;
+    this.micMonitorSource = null;
+    this.micCompressor = null;
   }
 
   log(message, type = "info") {
@@ -251,11 +254,10 @@ class AudioWebSocketClient {
       if (!this.mediaStream) {
         this.mediaStream = await navigator.mediaDevices.getUserMedia({
           audio: {
-            sampleRate: 24000,
             channelCount: 1,
-            echoCancellation: true, // Keep to prevent echo
-            noiseSuppression: false, // Disable - can reduce volume
-            autoGainControl: false, // Disable - major cause of low volume
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false,
           },
         });
       }
@@ -572,9 +574,8 @@ class AudioWebSocketClient {
       if (!this.mediaStream) {
         this.mediaStream = await navigator.mediaDevices.getUserMedia({
           audio: {
-            sampleRate: 24000,
             channelCount: 1,
-            echoCancellation: true,
+            echoCancellation: false,
             noiseSuppression: false,
             autoGainControl: false,
           },
@@ -582,40 +583,50 @@ class AudioWebSocketClient {
         this.log("Microphone access granted for mic test", "success");
       }
 
-      if (!this.audioContext) {
-        this.audioContext =
+      // Clean up any previous monitor graph but keep an existing context alive
+      this.stopMicMonitor(true);
+
+      // Use a dedicated monitor context at the device/native rate for fidelity
+      if (!this.micMonitorContext) {
+        this.micMonitorContext =
           new (window.AudioContext || window.webkitAudioContext)({
-            sampleRate: 24000,
             latencyHint: "interactive",
           });
       }
 
-      if (this.audioContext.state === "suspended") {
-        await this.audioContext.resume();
-      }
-
-      if (!this.micSource) {
-        this.micSource = this.audioContext.createMediaStreamSource(
-          this.mediaStream,
-        );
+      if (this.micMonitorContext.state === "suspended") {
+        await this.micMonitorContext.resume();
       }
 
       // Clean up any previous monitor graph before wiring a new one
-      this.stopMicMonitor();
+      this.stopMicMonitor(true);
 
-      this.micDelayNode = this.audioContext.createDelay(2.0);
+      this.micMonitorSource = this.micMonitorContext.createMediaStreamSource(
+        this.mediaStream,
+      );
+
+      this.micDelayNode = this.micMonitorContext.createDelay(2.0);
       this.micDelayNode.delayTime.value = this.micMonitorDelay;
 
-      this.micGainNode = this.audioContext.createGain();
+      // Gentle compressor to lift perceived loudness without clipping too hard
+      this.micCompressor = this.micMonitorContext.createDynamicsCompressor();
+      this.micCompressor.threshold.value = -30;
+      this.micCompressor.knee.value = 20;
+      this.micCompressor.ratio.value = 3;
+      this.micCompressor.attack.value = 0.003;
+      this.micCompressor.release.value = 0.25;
+
+      this.micGainNode = this.micMonitorContext.createGain();
       this.micGainNode.gain.value = this.micMonitorGain;
 
-      this.micSource.connect(this.micDelayNode);
-      this.micDelayNode.connect(this.micGainNode);
-      this.micGainNode.connect(this.audioContext.destination);
+      this.micMonitorSource.connect(this.micDelayNode);
+      this.micDelayNode.connect(this.micCompressor);
+      this.micCompressor.connect(this.micGainNode);
+      this.micGainNode.connect(this.micMonitorContext.destination);
 
       this.isMicMonitorActive = true;
       this.log(
-        `Mic test playing with ${Math.round(this.micMonitorDelay * 1000)}ms delay`,
+        `Mic test playing with ${Math.round(this.micMonitorDelay * 1000)}ms delay at ${this.micMonitorContext.sampleRate}Hz`,
         "success",
       );
     } catch (error) {
@@ -625,7 +636,7 @@ class AudioWebSocketClient {
     }
   }
 
-  stopMicMonitor() {
+  stopMicMonitor(keepContext = false) {
     if (this.micGainNode) {
       try {
         this.micGainNode.disconnect();
@@ -638,9 +649,30 @@ class AudioWebSocketClient {
       } catch (e) { }
     }
 
+    if (this.micMonitorSource) {
+      try {
+        this.micMonitorSource.disconnect();
+      } catch (e) { }
+    }
+
+    if (this.micCompressor) {
+      try {
+        this.micCompressor.disconnect();
+      } catch (e) { }
+    }
+
+    if (this.micMonitorContext && !keepContext) {
+      try {
+        this.micMonitorContext.close();
+      } catch (e) { }
+      this.micMonitorContext = null;
+    }
+
     this.micDelayNode = null;
     this.micGainNode = null;
+    this.micMonitorSource = null;
     this.isMicMonitorActive = false;
+    this.micCompressor = null;
 
     // Reset button label if present
     const micTestBtn = document.getElementById("micTestBtn");

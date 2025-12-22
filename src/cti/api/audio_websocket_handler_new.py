@@ -3,9 +3,11 @@ Audio WebSocket Handler - Flexible handler for bidirectional audio streaming
 """
 
 import asyncio
+import audioop
 import base64
 import json
 import uuid
+from array import array
 from dataclasses import dataclass, field
 from logging import getLogger
 from typing import Dict, List, Optional
@@ -64,6 +66,45 @@ class ConnectionState:
 
 
 BOT_INTERRUPT_DELAY = 200
+
+
+def _boost_pcm16(
+    pcm_bytes: bytes, target_peak_ratio: float = 0.9, max_gain: float = 3.0
+) -> bytes:
+    """
+    Light normalization for PCM16: raise peak toward target while capping gain.
+    """
+    if not pcm_bytes:
+        return pcm_bytes
+
+    try:
+        peak = audioop.max(pcm_bytes, 2)  # 2 bytes per sample
+    except Exception:
+        return pcm_bytes
+
+    if not peak:
+        return pcm_bytes
+
+    target_peak = int(32767 * target_peak_ratio)
+    if peak >= target_peak:
+        return pcm_bytes
+
+    gain = min(max_gain, target_peak / peak)
+    if gain <= 1.0:
+        return pcm_bytes
+
+    samples = array("h")
+    samples.frombytes(pcm_bytes)
+
+    for idx, sample in enumerate(samples):
+        boosted = int(sample * gain)
+        if boosted > 32767:
+            boosted = 32767
+        elif boosted < -32768:
+            boosted = -32768
+        samples[idx] = boosted
+
+    return samples.tobytes()
 
 
 class AudioWebSocketHandler:
@@ -408,6 +449,14 @@ class AudioWebSocketHandler:
         timestamp = audio_msg.get("timestamp", 0)
 
         if payload:
+            try:
+                pcm_bytes = base64.b64decode(payload)
+                boosted_bytes = _boost_pcm16(pcm_bytes)
+                if boosted_bytes != pcm_bytes:
+                    payload = base64.b64encode(boosted_bytes).decode("utf-8")
+            except Exception as exc:
+                logger.warning(f"Failed to boost client audio chunk: {exc}")
+
             state.latest_media_timestamp = timestamp or state.latest_media_timestamp
             state.client_audio_chunks.append(payload)
             # Log every 10th chunk to avoid flooding
@@ -584,11 +633,14 @@ class AudioWebSocketHandler:
             return
 
         async def _interrupt_bot_voice():
-            # await asyncio.sleep(BOT_INTERRUPT_DELAY)
-            await websocket.send_json({"event": "clear"})
+            try:
+                # await asyncio.sleep(BOT_INTERRUPT_DELAY)
+                await websocket.send_json({"event": "clear"})
+            except Exception as e:
+                logger.debug(str(e))
+                pass
 
         logger.info("Speech started detected", extra={"handler": "file"})
-
         asyncio.create_task(_interrupt_bot_voice())
 
         # if state.is_response_active and state.last_assistant_item:

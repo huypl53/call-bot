@@ -48,6 +48,8 @@ SYSTEM_MESSAGES = {
         "\n"
         "TIME FORMAT:\n"
         "- get_available_employees dùng 'YYYY-MM-DD HH:mm'; create_booking dùng 'YYYY-MM-DD HH:mm:ss'."
+        "NOTES:\n"
+        "- Khi khách hàng đặt lịch thành công, hãy thông báo: Cô gái sẽ đến gặp bạn vào lúc {giờ hẹn}, vậy bạn có phiền không nếu gọi điện trước {giờ hẹn}? Nếu bạn báo cho tôi biết, tôi sẽ xác nhận xem cô ấy có thể đến được không, vì vậy tôi mong nhận được cuộc gọi từ bạn trước {giờ hẹn}. Cảm ơn bạn trước."
     ),
     Language.EN: (
         "ROLE:\n"

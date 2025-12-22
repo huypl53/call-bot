@@ -27,7 +27,7 @@ class AudioWebSocketClient {
     this.audioSources = []; // Track active audio sources for immediate stop
     this.lastAudioLevel = 0;
     this.targetSampleRate = 24000; // Server-required sample rate
-    this.gainMultiplier = 3.0; // Boost client audio volume
+    this.gainMultiplier = 3.0; // Boost client audio volume sent over WebSocket (watch for clipping)
     this.micMonitorDelay = 1.25; // Seconds of delay for mic test playback
     this.micMonitorGain = 3.0; // Boost monitor volume (use headphones to avoid feedback)
     this.isMicMonitorActive = false;
@@ -256,7 +256,7 @@ class AudioWebSocketClient {
           audio: {
             channelCount: 1,
             echoCancellation: false,
-            noiseSuppression: false,
+            noiseSuppression: true,
             autoGainControl: false,
           },
         });
@@ -626,7 +626,8 @@ class AudioWebSocketClient {
 
       this.isMicMonitorActive = true;
       this.log(
-        `Mic test playing with ${Math.round(this.micMonitorDelay * 1000)}ms delay at ${this.micMonitorContext.sampleRate}Hz`,
+        `Mic test playing with ${Math.round(this.micMonitorDelay * 1000)
+        }ms delay at ${this.micMonitorContext.sampleRate}Hz`,
         "success",
       );
     } catch (error) {

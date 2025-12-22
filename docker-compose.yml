@@ -17,6 +17,7 @@ services:
     restart: unless-stopped
     networks:
       - kiai-network
+      - nodejs-backend-service_nodejs_backend_service_network
     healthcheck:
       test:
         [
@@ -29,12 +30,14 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    # extra_hosts:
+    #   - "host.docker.internal:host-gateway"
 
 networks:
   kiai-network:
     driver: bridge
+  nodejs-backend-service_nodejs_backend_service_network:
+    external: true
 
 volumes:
   sessions-data:

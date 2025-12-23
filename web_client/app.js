@@ -47,8 +47,8 @@ class AudioWebSocketClient {
     const consoleMethod = type === "error"
       ? "error"
       : type === "success"
-        ? "log"
-        : "info";
+      ? "log"
+      : "info";
     console[consoleMethod](`[${type.toUpperCase()}] ${logMessage}`);
 
     // Also log to UI
@@ -255,7 +255,7 @@ class AudioWebSocketClient {
         this.mediaStream = await navigator.mediaDevices.getUserMedia({
           audio: {
             channelCount: 1,
-            echoCancellation: false,
+            echoCancellation: true,
             noiseSuppression: true,
             autoGainControl: false,
           },
@@ -360,7 +360,7 @@ class AudioWebSocketClient {
       this.recorderNode.port.onmessage = null;
       try {
         this.recorderNode.disconnect();
-      } catch (e) { }
+      } catch (e) {}
       this.recorderNode = null;
     }
 
@@ -547,7 +547,7 @@ class AudioWebSocketClient {
     this.audioSources.forEach((source) => {
       try {
         source.stop();
-      } catch (e) { }
+      } catch (e) {}
     });
     this.audioSources = [];
 
@@ -555,7 +555,7 @@ class AudioWebSocketClient {
     if (this.playbackNode) {
       try {
         this.playbackNode.port.postMessage({ type: "stop" });
-      } catch (e) { }
+      } catch (e) {}
     }
 
     this.isPlaying = false;
@@ -575,8 +575,8 @@ class AudioWebSocketClient {
         this.mediaStream = await navigator.mediaDevices.getUserMedia({
           audio: {
             channelCount: 1,
-            echoCancellation: false,
-            noiseSuppression: false,
+            echoCancellation: true,
+            noiseSuppression: true,
             autoGainControl: false,
           },
         });
@@ -626,7 +626,8 @@ class AudioWebSocketClient {
 
       this.isMicMonitorActive = true;
       this.log(
-        `Mic test playing with ${Math.round(this.micMonitorDelay * 1000)
+        `Mic test playing with ${
+          Math.round(this.micMonitorDelay * 1000)
         }ms delay at ${this.micMonitorContext.sampleRate}Hz`,
         "success",
       );
@@ -641,31 +642,31 @@ class AudioWebSocketClient {
     if (this.micGainNode) {
       try {
         this.micGainNode.disconnect();
-      } catch (e) { }
+      } catch (e) {}
     }
 
     if (this.micDelayNode) {
       try {
         this.micDelayNode.disconnect();
-      } catch (e) { }
+      } catch (e) {}
     }
 
     if (this.micMonitorSource) {
       try {
         this.micMonitorSource.disconnect();
-      } catch (e) { }
+      } catch (e) {}
     }
 
     if (this.micCompressor) {
       try {
         this.micCompressor.disconnect();
-      } catch (e) { }
+      } catch (e) {}
     }
 
     if (this.micMonitorContext && !keepContext) {
       try {
         this.micMonitorContext.close();
-      } catch (e) { }
+      } catch (e) {}
       this.micMonitorContext = null;
     }
 

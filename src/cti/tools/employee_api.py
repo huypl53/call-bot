@@ -66,11 +66,17 @@ class GetEmployeeListTool(BaseTool):
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "page": {"type": "integer", "description": "Số trang (mặc định: 1)"},
-                    "size": {"type": "integer", "description": "Số lượng items mỗi trang (mặc định: 5)"}
+                    "page": {
+                        "type": "integer",
+                        "description": "Số trang (mặc định: 1)",
+                    },
+                    "size": {
+                        "type": "integer",
+                        "description": "Số lượng items mỗi trang (mặc định: 5)",
+                    },
                 },
-                "required": []
-            }
+                "required": [],
+            },
         }
 
     async def execute(
@@ -78,7 +84,7 @@ class GetEmployeeListTool(BaseTool):
         session_manager: SessionManager,
         page: Optional[int] = None,
         size: Optional[int] = None,
-        **kwargs
+        **kwargs,
     ) -> Dict[str, Any]:
         """Execute get employee list"""
         try:
@@ -94,7 +100,7 @@ class GetEmployeeListTool(BaseTool):
                     f"{settings.API_HOST}employees",
                     client=client,
                     params=params,
-                    timeout=30.0
+                    timeout=30.0,
                 )
                 response.raise_for_status()
                 data = response.json()
@@ -102,19 +108,21 @@ class GetEmployeeListTool(BaseTool):
             return {
                 "success": True,
                 "data": data,
-                "message": _get_employee_message("get_list_success")
+                "message": _get_employee_message("get_list_success"),
             }
         except httpx.HTTPStatusError as e:
             return {
                 "success": False,
                 "error": f"HTTP error: {e.response.status_code}",
-                "message": _get_employee_message("get_list_error", error=e.response.status_code)
+                "message": _get_employee_message(
+                    "get_list_error", error=e.response.status_code
+                ),
             }
         except Exception as e:
             return {
                 "success": False,
                 "error": str(e),
-                "message": _get_employee_message("get_list_error", error=str(e))
+                "message": _get_employee_message("get_list_error", error=str(e)),
             }
 
 
@@ -133,14 +141,33 @@ class GetAvailableEmployeesTool(BaseTool):
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "page": {"type": "integer", "description": "Số trang (mặc định: 1)"},
-                    "size": {"type": "integer", "description": "Số lượng items mỗi trang (mặc định: 5)"},
-                    "employeeName": {"type": "string", "description": "Lọc theo tên nhân viên (tùy chọn)"},
-                    "startTime": {"type": "string", "description": "Thời gian bắt đầu (format: YYYY-MM-DD HH:mm)"},
-                    "endTime": {"type": "string", "description": "Thời gian kết thúc (format: YYYY-MM-DD HH:mm)"}
+                    "page": {
+                        "type": "integer",
+                        "description": "Số trang (mặc định: 1)",
+                    },
+                    "size": {
+                        "type": "integer",
+                        "description": "Số lượng items mỗi trang (mặc định: 5)",
+                    },
+                    "employeeName": {
+                        "type": "string",
+                        "description": "Lọc theo tên nhân viên (tùy chọn)",
+                    },
+                    "employeeId": {
+                        "type": "string",
+                        "description": "Lọc theo ID nhân viên (tùy chọn)",
+                    },
+                    "startTime": {
+                        "type": "string",
+                        "description": "Thời gian bắt đầu (format: YYYY-MM-DD HH:mm)",
+                    },
+                    "endTime": {
+                        "type": "string",
+                        "description": "Thời gian kết thúc (format: YYYY-MM-DD HH:mm)",
+                    },
                 },
-                "required": []
-            }
+                "required": ["startTime", "endTime"],
+            },
         }
 
     async def execute(
@@ -149,9 +176,10 @@ class GetAvailableEmployeesTool(BaseTool):
         page: Optional[int] = None,
         size: Optional[int] = None,
         employeeName: Optional[str] = None,
+        employeeId: Optional[str] = None,
         startTime: Optional[str] = None,
         endTime: Optional[str] = None,
-        **kwargs
+        **kwargs,
     ) -> Dict[str, Any]:
         """Execute get available employees"""
         try:
@@ -162,6 +190,8 @@ class GetAvailableEmployeesTool(BaseTool):
                 params["size"] = size
             if employeeName:
                 params["employeeName"] = employeeName
+            if employeeId:
+                params["employeeId"] = employeeId
             if startTime:
                 params["startTime"] = startTime
             if endTime:
@@ -173,7 +203,7 @@ class GetAvailableEmployeesTool(BaseTool):
                     f"{settings.API_HOST}employees/availables",
                     client=client,
                     params=params,
-                    timeout=30.0
+                    timeout=30.0,
                 )
                 response.raise_for_status()
                 data = response.json()
@@ -181,19 +211,21 @@ class GetAvailableEmployeesTool(BaseTool):
             return {
                 "success": True,
                 "data": data,
-                "message": _get_employee_message("get_available_success")
+                "message": _get_employee_message("get_available_success"),
             }
         except httpx.HTTPStatusError as e:
             return {
                 "success": False,
                 "error": f"HTTP error: {e.response.status_code}",
-                "message": _get_employee_message("get_available_error", error=e.response.status_code)
+                "message": _get_employee_message(
+                    "get_available_error", error=e.response.status_code
+                ),
             }
         except Exception as e:
             return {
                 "success": False,
                 "error": str(e),
-                "message": _get_employee_message("get_available_error", error=str(e))
+                "message": _get_employee_message("get_available_error", error=str(e)),
             }
 
 
@@ -213,13 +245,25 @@ class GetEmployeeBookingsTool(BaseTool):
                 "type": "object",
                 "properties": {
                     "employeeId": {"type": "string", "description": "ID của nhân viên"},
-                    "page": {"type": "integer", "description": "Số trang (mặc định: 1)"},
-                    "size": {"type": "integer", "description": "Số lượng items mỗi trang (mặc định: 10)"},
-                    "startTime": {"type": "string", "description": "Thời gian bắt đầu (format: YYYY-MM-DD HH:mm)"},
-                    "endTime": {"type": "string", "description": "Thời gian kết thúc (format: YYYY-MM-DD HH:mm)"}
+                    "page": {
+                        "type": "integer",
+                        "description": "Số trang (mặc định: 1)",
+                    },
+                    "size": {
+                        "type": "integer",
+                        "description": "Số lượng items mỗi trang (mặc định: 10)",
+                    },
+                    "startTime": {
+                        "type": "string",
+                        "description": "Thời gian bắt đầu (format: YYYY-MM-DD HH:mm)",
+                    },
+                    "endTime": {
+                        "type": "string",
+                        "description": "Thời gian kết thúc (format: YYYY-MM-DD HH:mm)",
+                    },
                 },
-                "required": ["employeeId"]
-            }
+                "required": ["employeeId"],
+            },
         }
 
     async def execute(
@@ -230,7 +274,7 @@ class GetEmployeeBookingsTool(BaseTool):
         size: Optional[int] = None,
         startTime: Optional[str] = None,
         endTime: Optional[str] = None,
-        **kwargs
+        **kwargs,
     ) -> Dict[str, Any]:
         """Execute get employee bookings"""
         try:
@@ -250,7 +294,7 @@ class GetEmployeeBookingsTool(BaseTool):
                     f"{settings.API_HOST}employees/{employeeId}/bookings",
                     client=client,
                     params=params,
-                    timeout=30.0
+                    timeout=30.0,
                 )
                 response.raise_for_status()
                 data = response.json()
@@ -258,17 +302,19 @@ class GetEmployeeBookingsTool(BaseTool):
             return {
                 "success": True,
                 "data": data,
-                "message": _get_employee_message("get_bookings_success")
+                "message": _get_employee_message("get_bookings_success"),
             }
         except httpx.HTTPStatusError as e:
             return {
                 "success": False,
                 "error": f"HTTP error: {e.response.status_code}",
-                "message": _get_employee_message("get_bookings_error", error=e.response.status_code)
+                "message": _get_employee_message(
+                    "get_bookings_error", error=e.response.status_code
+                ),
             }
         except Exception as e:
             return {
                 "success": False,
                 "error": str(e),
-                "message": _get_employee_message("get_bookings_error", error=str(e))
+                "message": _get_employee_message("get_bookings_error", error=str(e)),
             }

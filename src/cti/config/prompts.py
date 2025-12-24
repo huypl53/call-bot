@@ -40,11 +40,11 @@ SYSTEM_MESSAGES = {
         "       - NO -> kết thúc.\n"
         "\n"
         "TOOLS:\n"
-        "- get_available_employees: kiểm tra còn chỗ theo startTime/endTime; dùng khi khách chỉ định nhân viên hoặc muốn gợi ý nhân viên phù hợp.\n"
-        "- get_department_list: khi tên địa điểm mơ hồ, liệt kê để xác nhận.\n"
-        "- get_service_list: khi cần map thời lượng gói sang serviceId hoặc khi khách hỏi danh sách tùy chọn/dịch vụ bổ sung.\n"
-        "- get_employee_list: dùng khi khách muốn xem danh sách nhân viên.\n"
-        "- create_booking: chỉ gọi khi đã có startTime, endTime, serviceId, employeeId, customerName; thêm options/departmentId/storeName/paymentMethod nếu có.\n"
+        "- `get_employee_list`: dùng khi khách muốn xem danh sách nhân viên.\n"
+        "- `get_available_employees`: kiểm tra còn chỗ theo startTime/endTime; dùng khi khách chỉ định nhân viên hoặc muốn gợi ý nhân viên phù hợp; vì chỉ tìm kiếm theo tên nhân viên có thể thiếu chính xác, bạn cần lấy `employeeId` ở `get_employee_list` rồi đưa vào kiểm tra ở đây \n"
+        "- `get_department_list`: khi tên địa điểm mơ hồ, liệt kê để xác nhận.\n"
+        "- `get_service_list`: khi cần map thời lượng gói sang serviceId hoặc khi khách hỏi danh sách tùy chọn/dịch vụ bổ sung.\n"
+        "- `create_booking`: chỉ gọi khi đã có startTime, endTime, serviceId, employeeId, customerName; thêm options/departmentId/storeName/paymentMethod nếu có.\n"
         "\n"
         "TIME FORMAT:\n"
         "- get_available_employees dùng 'YYYY-MM-DD HH:mm'; create_booking dùng 'YYYY-MM-DD HH:mm:ss'."
@@ -90,6 +90,8 @@ SYSTEM_MESSAGES = {
         "\n"
         "TIME FORMAT:\n"
         "- get_available_employees uses 'YYYY-MM-DD HH:mm'; create_booking uses 'YYYY-MM-DD HH:mm:ss'."
+        "NOTES:\n"
+        "- When the booking is successful, inform the caller: The girl will meet you at {appointment time}. Would you mind if she calls before {appointment time}? If you let me know, I'll confirm whether she can come, so please call me before {appointment time}. Thank you in advance."
     ),
     Language.JP: (
         "役割:\n"
@@ -129,7 +131,9 @@ SYSTEM_MESSAGES = {
         "- create_booking: startTime, endTime, serviceId, employeeId, customerName が揃ったときのみ呼び出す。options/departmentId/storeName/paymentMethod があれば追加。\n"
         "\n"
         "時間形式:\n"
-        "- get_available_employees は 'YYYY-MM-DD HH:mm'、create_booking は 'YYYY-MM-DD HH:mm:ss' を使用。"
+        "- get_available_employees は 'YYYY-MM-DD HH:mm'、create_booking は 'YYYY-MM-DD HH:mm:ss' を使用。\n"
+        "注意:\n"
+        "- 予約が完了したら必ず伝える: ご予約の時間は {appointment time} です。その前にお電話してもよろしいでしょうか？ご連絡いただければ彼女が向かえるか確認しますので、{appointment time} までにお電話ください。よろしくお願いします。"
     ),
 }
 

@@ -311,23 +311,23 @@ class CreateBookingTool(BaseTool):
                         "type": "string",
                         "description": "Tên khách hàng ",
                     },
-                    "furiganaName": {"type": "string", "description": "Tên furigana"},
-                    "customerAge": {
-                        "type": "integer",
-                        "description": "Tuổi khách hàng (tùy chọn)",
-                    },
-                    "customerGender": {
-                        "type": "string",
-                        "description": "Giới tính khách hàng (tùy chọn)",
-                    },
-                    "phoneNumber": {
-                        "type": "string",
-                        "description": "Số điện thoại (tùy chọn)",
-                    },
-                    "category": {
-                        "type": "string",
-                        "description": "Nhóm khách hàng (tùy chọn)",
-                    },
+                    # "furiganaName": {"type": "string", "description": "Tên furigana"},
+                    # "customerAge": {
+                    #     "type": "integer",
+                    #     "description": "Tuổi khách hàng (tùy chọn)",
+                    # },
+                    # "customerGender": {
+                    #     "type": "string",
+                    #     "description": "Giới tính khách hàng (tùy chọn)",
+                    # },
+                    # "phoneNumber": {
+                    #     "type": "string",
+                    #     "description": "Số điện thoại (tùy chọn)",
+                    # },
+                    # "category": {
+                    #     "type": "string",
+                    #     "description": "Nhóm khách hàng (tùy chọn)",
+                    # },
                     "note": {
                         "type": "string",
                         "description": "Ghi chú cho khách hàng (tùy chọn)",
@@ -335,90 +335,104 @@ class CreateBookingTool(BaseTool):
                     "bookingStartTime": {
                         "type": "string",
                         "description": "Thời gian bắt đầu booking (format: YYYY-MM-DD HH:mm:ss)",
+                        # },
+                        # "storeName": {
+                        #     "type": "string",
+                        #     "description": "Tên cửa hàng (tùy chọn)",
+                        # },
+                        # "extensionMinutes": {
+                        #     "type": "integer",
+                        #     "description": "Thời gian gia hạn (phút)",
+                        # },
+                        # "meetingPoint": {
+                        #     "type": "string",
+                        #     "description": "Điểm hẹn (tùy chọn)",
+                        # },
+                        "departmentId": {
+                            "type": "string",
+                            "description": "ID phòng ban (tùy chọn)",
+                        },
+                        # "room": {"type": "string", "description": "Phòng (tùy chọn)"},
+                        "options": {
+                            "type": "array",
+                            "items": {
+                                "enum": [
+                                    "ローター",
+                                    "アイマスク",
+                                    "パンスト",
+                                    "コスプレ",
+                                    "口内発射",
+                                    "パイプ",
+                                    "オナニー",
+                                    "電マ",
+                                    "顔無し撮影",
+                                    "顔有撮影",
+                                ]
+                            },
+                            "description": "Các lựa chọn bổ sung (tùy chọn)",
+                        },
+                        # "driverDropoff": {
+                        #     "type": "string",
+                        #     "description": "Điểm trả khách (tùy chọn)",
+                        # },
+                        # "driverPickup": {
+                        #     "type": "string",
+                        #     "description": "Điểm đón khách (tùy chọn)",
+                        # },
+                        "paymentMethod": {
+                            "type": "string",
+                            "description": "Phương thức thanh toán (tùy chọn)",
+                            "enum": [
+                                "cash",
+                                "credit_card",
+                                # "debit_card",
+                                # "bank_transfer",
+                                # "paypay",
+                            ],
+                        },
+                        # "totalFee": {
+                        #     "type": "number",
+                        #     "description": "Tổng chi phí (tùy chọn)",
+                        # },
+                        # "changePrepared": {
+                        #     "type": "number",
+                        #     "description": "Tiền thối chuẩn bị (tùy chọn)",
+                        # },
+                        # "cashReceivedCustomer": {
+                        #     "type": "number",
+                        #     "description": "Tiền khách thanh toán (tùy chọn)",
+                        # },
+                        # "cashReceivedStaff": {
+                        #     "type": "number",
+                        #     "description": "Tiền nhân viên nhận (tùy chọn)",
+                        # },
+                        # "discount": {
+                        #     "type": "number",
+                        #     "description": "Chiết khấu (tùy chọn)",
+                        # },
+                        # "finalPayment": {
+                        #     "type": "number",
+                        #     "description": "Số tiền thanh toán cuối cùng (tùy chọn)",
+                        # },
+                        "travelFee": {
+                            "type": "number",
+                            "description": "Phí di chuyển (tùy chọn)",
+                        },
+                        "receivedBy": {
+                            "type": "string",
+                            "description": "Người nhận tiền (tùy chọn)",
+                        },
+                        # "firstContactSource": {"type": "string", "description": "Nguồn liên hệ đầu tiên (tùy chọn)"}
                     },
-                    "storeName": {
-                        "type": "string",
-                        "description": "Tên cửa hàng (tùy chọn)",
-                    },
-                    # "extensionMinutes": {
-                    #     "type": "integer",
-                    #     "description": "Thời gian gia hạn (phút)",
-                    # },
-                    # "meetingPoint": {
-                    #     "type": "string",
-                    #     "description": "Điểm hẹn (tùy chọn)",
-                    # },
-                    "departmentId": {
-                        "type": "string",
-                        "description": "ID phòng ban (tùy chọn)",
-                    },
-                    "room": {"type": "string", "description": "Phòng (tùy chọn)"},
-                    "options": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Các lựa chọn bổ sung (tùy chọn)",
-                    },
-                    # "driverDropoff": {
-                    #     "type": "string",
-                    #     "description": "Điểm trả khách (tùy chọn)",
-                    # },
-                    # "driverPickup": {
-                    #     "type": "string",
-                    #     "description": "Điểm đón khách (tùy chọn)",
-                    # },
-                    "paymentMethod": {
-                        "type": "string",
-                        "description": "Phương thức thanh toán (tùy chọn)",
-                        "enum": [
-                            "cash",
-                            "credit_card",
-                            "debit_card",
-                            "bank_transfer",
-                            "paypay",
-                        ],
-                    },
-                    "totalFee": {
-                        "type": "number",
-                        "description": "Tổng chi phí (tùy chọn)",
-                    },
-                    "changePrepared": {
-                        "type": "number",
-                        "description": "Tiền thối chuẩn bị (tùy chọn)",
-                    },
-                    "cashReceivedCustomer": {
-                        "type": "number",
-                        "description": "Tiền khách thanh toán (tùy chọn)",
-                    },
-                    # "cashReceivedStaff": {
-                    #     "type": "number",
-                    #     "description": "Tiền nhân viên nhận (tùy chọn)",
-                    # },
-                    # "discount": {
-                    #     "type": "number",
-                    #     "description": "Chiết khấu (tùy chọn)",
-                    # },
-                    # "finalPayment": {
-                    #     "type": "number",
-                    #     "description": "Số tiền thanh toán cuối cùng (tùy chọn)",
-                    # },
-                    "travelFee": {
-                        "type": "number",
-                        "description": "Phí di chuyển (tùy chọn)",
-                    },
-                    "receivedBy": {
-                        "type": "string",
-                        "description": "Người nhận tiền (tùy chọn)",
-                    },
-                    # "firstContactSource": {"type": "string", "description": "Nguồn liên hệ đầu tiên (tùy chọn)"}
+                    "required": [
+                        "source",
+                        "startTime",
+                        "endTime",
+                        "serviceId",
+                        "employeeId",
+                        "customerName",
+                    ],
                 },
-                "required": [
-                    "source",
-                    "startTime",
-                    "endTime",
-                    "serviceId",
-                    "employeeId",
-                    "customerName",
-                ],
             },
         }
 

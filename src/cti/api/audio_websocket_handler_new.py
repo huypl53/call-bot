@@ -428,13 +428,13 @@ class AudioWebSocketHandler:
         timestamp = audio_msg.get("timestamp", 0)
 
         if payload:
-            try:
-                pcm_bytes = base64.b64decode(payload)
-                boosted_bytes = _boost_pcm16(pcm_bytes)
-                if boosted_bytes != pcm_bytes:
-                    payload = base64.b64encode(boosted_bytes).decode("utf-8")
-            except Exception as exc:
-                logger.warning(f"Failed to boost client audio chunk: {exc}")
+            # try:
+            #     pcm_bytes = base64.b64decode(payload)
+            #     boosted_bytes = _boost_pcm16(pcm_bytes)
+            #     if boosted_bytes != pcm_bytes:
+            #         payload = base64.b64encode(boosted_bytes).decode("utf-8")
+            # except Exception as exc:
+            #     logger.warning(f"Failed to boost client audio chunk: {exc}")
 
             state.latest_media_timestamp = timestamp or state.latest_media_timestamp
             state.client_audio_chunks.append(payload)

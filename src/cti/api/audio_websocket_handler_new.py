@@ -58,7 +58,7 @@ class ConnectionState:
     response_start_timestamp: Optional[int] = None
     is_paused: bool = False
     last_interruption_time: int = 0
-    interruption_cooldown_ms: int = 1000
+    interruption_cooldown_ms: int = 500
     is_response_active: bool = False
     current_response_id: Optional[str] = None
     openai_audio_chunks: List[str] = field(default_factory=list)
@@ -384,7 +384,32 @@ class AudioWebSocketHandler:
         if event_type == "conversation.item.input_audio_transcription.completed" and (
             transcript := getattr(event, "transcript")
         ):
-            logger.info(f"transcription: {transcript}")
+            logger.info(f"USER transcription: {transcript}")
+            try:
+                await websocket.send_json(
+                    {
+                        "event": "transcription",
+                        "transcript": f"USER:\t{ transcript}",
+                        "timestamp": state.latest_media_timestamp,
+                    }
+                )
+            except Exception as exc:
+                logger.info(f"Failed to forward USER transcription: {exc}")
+
+        if event_type == "response.output_audio_transcript.done" and (
+            transcript := getattr(event, "transcript")
+        ):
+            logger.info(f"AI transcription: {transcript}")
+            try:
+                await websocket.send_json(
+                    {
+                        "event": "transcription",
+                        "transcript": f"AI:\t{ transcript}",
+                        "timestamp": state.latest_media_timestamp,
+                    }
+                )
+            except Exception as exc:
+                logger.info(f"Failed to forward AI transcription: {exc}")
 
         if event_type == "input_audio_buffer.speech_started":
             logger.info("input_audio_buffer.speech_started")

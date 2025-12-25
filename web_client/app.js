@@ -505,6 +505,13 @@ class AudioWebSocketClient {
       this.log("Clear event received", "info");
       this.isAssistantSpeaking = false;
       this.stopAudioPlayback();
+    } else if (eventType === "transcription") {
+      const transcript = data.transcript || "";
+      if (transcript) {
+        this.log(`Transcript: ${transcript}`, "info");
+      } else {
+        this.log("Received transcription event without transcript", "error");
+      }
     } else if (eventType === "session.ended") {
       console.log(
         "[HANDLE] Session ended with audio URL:",

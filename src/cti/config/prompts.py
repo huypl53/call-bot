@@ -10,6 +10,7 @@ from cti.config.settings import Language, settings
 # Language-specific system messages
 SYSTEM_MESSAGES = {
     Language.VI: (
+        "Luôn sử dụng tiếng việt để trò chuyện"
         "ROLE:\n"
         "- Bạn là Root Call Agent, chịu trách nhiệm thoại với khách và giữ websocket ổn định.\n"
         "\n"

@@ -115,6 +115,17 @@
             box-shadow: 0 5px 15px rgba(231, 76, 60, 0.4);
         }
 
+        .btn-mic-test {
+            background: #10b981;
+            color: white;
+        }
+
+        .btn-mic-test:hover:not(:disabled) {
+            background: #0e9f6e;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(16, 185, 129, 0.35);
+        }
+
         .status {
             padding: 15px;
             border-radius: 10px;
@@ -207,6 +218,7 @@
         <div class="button-group">
             <button id="connectBtn" class="btn-connect">Connect & Start</button>
             <button id="disconnectBtn" class="btn-disconnect" disabled>Disconnect</button>
+            <button id="micTestBtn" class="btn-mic-test">Test Mic (Delay)</button>
         </div>
 
         <div class="audio-visualizer">
@@ -219,4 +231,3 @@
     <script src="app.js"></script>
 </body>
 </html>
-

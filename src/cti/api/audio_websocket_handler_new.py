@@ -3,18 +3,25 @@ Audio WebSocket Handler - Flexible handler for bidirectional audio streaming
 """
 
 import asyncio
+import audioop
 import base64
 import json
 import uuid
+from array import array
 from dataclasses import dataclass, field
 from logging import getLogger
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from fastapi import WebSocket
 from fastapi.websockets import WebSocketDisconnect
 from openai import AsyncOpenAI
 from openai.resources.realtime.realtime import AsyncRealtimeConnection
-from openai.types.realtime import RealtimeServerEvent, session_update_event_param
+from openai.types.realtime import (
+    RealtimeServerEvent,
+    RealtimeToolsConfigParam,
+    session_update_event_param,
+    RealtimeFunctionToolParam,
+)
 
 from cti.api.audio_types import (
     AudioMessage,
@@ -26,10 +33,14 @@ from cti.agents.realtime_agent_orchestrator import RealtimeAgentOrchestrator
 from cti.config.constants import LOG_EVENT_TYPES
 from cti.config.prompts import SYSTEM_MESSAGE
 from cti.config.settings import settings
-from cti.core.connection_context import get_connection_language, record_audio
+from cti.core.connection_context import (
+    get_audio_record_folder,
+    get_connection_language,
+    record_audio,
+)
 from cti.core.session_manager import SessionManager
+from cti.services.audio_merge_service import AudioMergeService
 from cti.services.tool_service import ToolService
-from cti.services.tts_service import TTSService
 from cti.tools.delegation import DelegateToAgentTool
 from langsmith.wrappers import wrap_openai
 
@@ -47,14 +58,54 @@ class ConnectionState:
     response_start_timestamp: Optional[int] = None
     is_paused: bool = False
     last_interruption_time: int = 0
-    interruption_cooldown_ms: int = 1000
+    interruption_cooldown_ms: int = 500
     is_response_active: bool = False
     current_response_id: Optional[str] = None
     openai_audio_chunks: List[str] = field(default_factory=list)
     client_audio_chunks: List[str] = field(default_factory=list)
+    recording_chunks: List[Tuple[str, str]] = field(default_factory=list)
 
 
-BOT_INTERRUPT_DELAY = 500
+BOT_INTERRUPT_DELAY = 200
+
+
+def _boost_pcm16(
+    pcm_bytes: bytes, target_peak_ratio: float = 0.9, max_gain: float = 3.0
+) -> bytes:
+    """
+    Light normalization for PCM16: raise peak toward target while capping gain.
+    """
+    if not pcm_bytes:
+        return pcm_bytes
+
+    try:
+        peak = audioop.max(pcm_bytes, 2)  # 2 bytes per sample
+    except Exception:
+        return pcm_bytes
+
+    if not peak:
+        return pcm_bytes
+
+    target_peak = int(32767 * target_peak_ratio)
+    if peak >= target_peak:
+        return pcm_bytes
+
+    gain = min(max_gain, target_peak / peak)
+    if gain <= 1.0:
+        return pcm_bytes
+
+    samples = array("h")
+    samples.frombytes(pcm_bytes)
+
+    for idx, sample in enumerate(samples):
+        boosted = int(sample * gain)
+        if boosted > 32767:
+            boosted = 32767
+        elif boosted < -32768:
+            boosted = -32768
+        samples[idx] = boosted
+
+    return samples.tobytes()
 
 
 class AudioWebSocketHandler:
@@ -63,27 +114,21 @@ class AudioWebSocketHandler:
     def __init__(self):
         """Initialize the audio websocket handler."""
         self.tool_service = ToolService()
-        self.tts_service = TTSService()
         self.websocket_base_url = self._build_websocket_base_url()
         # self.agent_orchestrator = RealtimeAgentOrchestrator(
         #     self.tool_service, self.websocket_base_url
         # )
         # self.tool_service.register_tool(DelegateToAgentTool(self.agent_orchestrator))
         self.root_agent_instructions = str(SYSTEM_MESSAGE)
-        # self.root_agent_instructions = (
-        #     "Bạn là Root Call Agent, chịu trách nhiệm thoại với khách và giữ websocket ổn định. "
-        #     "Bám sát luồng call-flow: (1) bắt máy, hỏi có đặt cho hôm nay không; (2) nếu hôm nay: hỏi nhân viên ưa thích (gợi ý nữ), hỏi giờ bắt đầu và thời lượng dịch vụ, hỏi ưu tiên địa điểm; "
-        #     "(3) nếu ngày khác: hỏi ngày/giờ mong muốn; (4) vào bước kiểm tra khả dụng, báo khách chờ; "
-        #     "(5) nếu trống: xin tên + thông tin liên lạc, nhắc lại chi tiết để xác nhận; "
-        #     "(6) nếu không trống: đề xuất khung giờ khác trong ngày, nếu hết chỗ thì hỏi có muốn đặt ngày khác. "
-        #     "Handoff qua delegate_to_agent: availability_agent (kiểm tra slot, gợi ý giờ thay thế), booking_agent (dựng và gửi payload đặt lịch), data_agent (tra cứu dịch vụ/nhân viên/chi nhánh/khách). "
-        #     "Không đọc JSON thô; luôn tóm tắt ngắn gọn, thân thiện."
-        # )
 
     async def handle_connection(self, websocket: WebSocket):
         """Main handler for WebSocket connections."""
         logger.info("Audio client connected")
         await websocket.accept()
+
+        # Get connection_id for audio download URL
+        audio_folder = get_audio_record_folder()
+        connection_id = audio_folder.name if audio_folder else None
 
         try:
             client = AsyncOpenAI(
@@ -110,7 +155,9 @@ class AudioWebSocketHandler:
                         self._realtime_session_loop(connection, websocket, state)
                     ),
                     asyncio.create_task(
-                        self._client_message_loop(websocket, connection, state)
+                        self._client_message_loop(
+                            websocket, connection, state, connection_id
+                        )
                     ),
                 ]
 
@@ -159,6 +206,7 @@ class AudioWebSocketHandler:
         websocket: WebSocket,
         connection: AsyncRealtimeConnection,
         state: ConnectionState,
+        connection_id: Optional[str] = None,
     ):
         """Listen for messages from client WebSocket and handle them."""
         try:
@@ -208,7 +256,7 @@ class AudioWebSocketHandler:
                         continue
 
                     await self._handle_client_message(
-                        message, connection, websocket, state
+                        message, connection, websocket, state, connection_id
                     )
 
                 except (KeyError, ValueError, TypeError) as exc:
@@ -279,7 +327,7 @@ class AudioWebSocketHandler:
         if event_type == "response.created":
             state.is_response_active = True
             if hasattr(event, "response_id"):
-                state.current_response_id = event.response_id
+                state.current_response_id = getattr(event, "response_id")
             state.openai_audio_chunks.clear()
             logger.info("Response started", extra={"handler": "file"})
             return
@@ -287,26 +335,18 @@ class AudioWebSocketHandler:
         if event_type == "response.done":
             state.is_response_active = False
             state.current_response_id = None
-            logger.info("Response done detected")
+            logger.info(
+                f"Response done detected. OpenAI chunks: {len(state.openai_audio_chunks)}, Client chunks: {len(state.client_audio_chunks)}"
+            )
 
-            if state.openai_audio_chunks:
-                complete_audio = "".join(state.openai_audio_chunks)
-                record_audio(complete_audio, "openai", state.latest_media_timestamp)
-                state.openai_audio_chunks.clear()
-
-            if state.client_audio_chunks:
-                complete_client_audio = "".join(state.client_audio_chunks)
-                record_audio(
-                    complete_client_audio, "client", state.latest_media_timestamp
-                )
-                state.client_audio_chunks.clear()
+            await self._flush_recording_buffer(state)
             return
 
         if event_type == "response.cancelled":
             state.is_response_active = False
             state.current_response_id = None
             logger.info("Response cancelled")
-            state.openai_audio_chunks.clear()
+            await self._flush_recording_buffer(state)
             await websocket.send_json({"event": "response.cancelled"})
             await websocket.send_json({"event": "clear"})
             return
@@ -315,12 +355,13 @@ class AudioWebSocketHandler:
             await self._handle_function_call(event, connection, state.session_manager)
             return
 
-        if event_type == "response.output_audio.delta" and hasattr(event, "delta"):
-            audio_payload = base64.b64encode(base64.b64decode(event.delta)).decode(
-                "utf-8"
-            )
+        if event_type == "response.output_audio.delta" and (
+            delta := getattr(event, "delta")
+        ):
+            audio_payload = base64.b64encode(base64.b64decode(delta)).decode("utf-8")
 
             state.openai_audio_chunks.append(audio_payload)
+            state.recording_chunks.append(("openai", audio_payload))
 
             await websocket.send_json(
                 {
@@ -332,13 +373,43 @@ class AudioWebSocketHandler:
             )
 
             if (
-                hasattr(event, "item_id")
-                and event.item_id
-                and event.item_id != state.last_assistant_item
+                (item_id := getattr(event, "item_id"))
+                and item_id
+                and item_id != state.last_assistant_item
             ):
                 state.response_start_timestamp = state.latest_media_timestamp
-                state.last_assistant_item = event.item_id
+                state.last_assistant_item = item_id
             return
+
+        if event_type == "conversation.item.input_audio_transcription.completed" and (
+            transcript := getattr(event, "transcript")
+        ):
+            logger.info(f"USER transcription: {transcript}")
+            try:
+                await websocket.send_json(
+                    {
+                        "event": "transcription",
+                        "transcript": f"USER:\t{ transcript}",
+                        "timestamp": state.latest_media_timestamp,
+                    }
+                )
+            except Exception as exc:
+                logger.info(f"Failed to forward USER transcription: {exc}")
+
+        if event_type == "response.output_audio_transcript.done" and (
+            transcript := getattr(event, "transcript")
+        ):
+            logger.info(f"AI transcription: {transcript}")
+            try:
+                await websocket.send_json(
+                    {
+                        "event": "transcription",
+                        "transcript": f"AI:\t{ transcript}",
+                        "timestamp": state.latest_media_timestamp,
+                    }
+                )
+            except Exception as exc:
+                logger.info(f"Failed to forward AI transcription: {exc}")
 
         if event_type == "input_audio_buffer.speech_started":
             logger.info("input_audio_buffer.speech_started")
@@ -351,6 +422,7 @@ class AudioWebSocketHandler:
         connection: AsyncRealtimeConnection,
         websocket: WebSocket,
         state: ConnectionState,
+        connection_id: Optional[str] = None,
     ):
         """Handle incoming messages from client."""
         event_type = message.get("event")
@@ -361,6 +433,8 @@ class AudioWebSocketHandler:
             await self._handle_start_event(message, state)
         elif event_type == "text":
             await self._handle_text_message(message, websocket, connection)
+        elif event_type == "disconnect":
+            await self._handle_disconnect_event(websocket, state, connection_id)
         elif event_type in ("pause", "resume", "stop", "clear"):
             await self._handle_control_message(message, connection, websocket, state)
 
@@ -379,9 +453,44 @@ class AudioWebSocketHandler:
         timestamp = audio_msg.get("timestamp", 0)
 
         if payload:
+            # try:
+            #     pcm_bytes = base64.b64decode(payload)
+            #     boosted_bytes = _boost_pcm16(pcm_bytes)
+            #     if boosted_bytes != pcm_bytes:
+            #         payload = base64.b64encode(boosted_bytes).decode("utf-8")
+            # except Exception as exc:
+            #     logger.warning(f"Failed to boost client audio chunk: {exc}")
+
             state.latest_media_timestamp = timestamp or state.latest_media_timestamp
             state.client_audio_chunks.append(payload)
+            state.recording_chunks.append(("client", payload))
+            # Log every 10th chunk to avoid flooding
+            # if len(state.client_audio_chunks) % 10 == 1:
+            #     logger.info(f"Client audio chunks accumulated: {len(state.client_audio_chunks)}")
             await connection.input_audio_buffer.append(audio=payload)
+
+    async def _flush_recording_buffer(self, state: ConnectionState):
+        """Persist accumulated mixed audio (client + openai) in arrival order."""
+        if not state.recording_chunks:
+            state.openai_audio_chunks.clear()
+            state.client_audio_chunks.clear()
+            return
+
+        try:
+            combined_bytes = b"".join(
+                base64.b64decode(chunk) for _, chunk in state.recording_chunks
+            )
+            encoded_audio = base64.b64encode(combined_bytes).decode("utf-8")
+            record_audio(encoded_audio, "conversation", state.latest_media_timestamp)
+            logger.info(
+                f"Saved conversation audio: {len(combined_bytes)} bytes from {len(state.recording_chunks)} chunks"
+            )
+        except Exception as exc:
+            logger.warning(f"Failed to flush recording buffer: {exc}")
+        finally:
+            state.recording_chunks.clear()
+            state.openai_audio_chunks.clear()
+            state.client_audio_chunks.clear()
 
     async def _handle_start_event(self, message: Dict, state: ConnectionState):
         """Handle session start event."""
@@ -458,6 +567,62 @@ class AudioWebSocketHandler:
                     f"Error clearing input buffer: {exc}", extra={"handler": "file"}
                 )
 
+    async def _handle_disconnect_event(
+        self,
+        websocket: WebSocket,
+        state: ConnectionState,
+        connection_id: Optional[str] = None,
+    ):
+        """Handle disconnect event from client - merge audio and send download URL."""
+        logger.info("Received disconnect event from client")
+
+        # Save any remaining audio chunks before merging
+        await self._flush_recording_buffer(state)
+
+        if connection_id:
+            try:
+                audio_service = AudioMergeService()
+                merged_path = audio_service.merge_audio_files(connection_id)
+
+                if merged_path:
+                    audio_url = f"/audio/{connection_id}/download"
+                    await websocket.send_json(
+                        {
+                            "event": "session.ended",
+                            "audio_download_url": audio_url,
+                            "connection_id": connection_id,
+                        }
+                    )
+                    logger.info(f"Sent audio download URL: {audio_url}")
+                else:
+                    await websocket.send_json(
+                        {
+                            "event": "session.ended",
+                            "audio_download_url": None,
+                            "connection_id": connection_id,
+                        }
+                    )
+                    logger.info(
+                        "No audio files to merge, sent session.ended without URL"
+                    )
+            except Exception as exc:
+                logger.error(f"Failed to merge audio or send URL: {exc}")
+                await websocket.send_json(
+                    {
+                        "event": "session.ended",
+                        "audio_download_url": None,
+                        "connection_id": connection_id,
+                        "error": str(exc),
+                    }
+                )
+        else:
+            await websocket.send_json(
+                {
+                    "event": "session.ended",
+                    "audio_download_url": None,
+                }
+            )
+
     async def _handle_speech_started(
         self,
         connection: AsyncRealtimeConnection,
@@ -476,14 +641,19 @@ class AudioWebSocketHandler:
             return
 
         async def _interrupt_bot_voice():
-            await asyncio.sleep(BOT_INTERRUPT_DELAY)
-            await websocket.send_json({"event": "clear"})
-
-        asyncio.create_task(_interrupt_bot_voice())
+            try:
+                # await asyncio.sleep(BOT_INTERRUPT_DELAY)
+                await websocket.send_json({"event": "clear"})
+            except Exception as e:
+                logger.debug(str(e))
+                pass
 
         logger.info("Speech started detected", extra={"handler": "file"})
+        # asyncio.create_task(_interrupt_bot_voice())
 
         if state.is_response_active and state.last_assistant_item:
+            # if True:
+            await _interrupt_bot_voice()
             logger.info(
                 f"User interrupting active response with id: {state.last_assistant_item}",
                 extra={"handler": "file"},
@@ -562,6 +732,7 @@ class AudioWebSocketHandler:
 
     async def _initialize_session(self, connection: AsyncRealtimeConnection):
         """Initialize OpenAI session with PCM16/WAV format."""
+        tools: RealtimeToolsConfigParam = self.tool_service.get_tool_definitions()
         session_config: session_update_event_param.Session = {
             "type": "realtime",
             "model": settings.MODEL,
@@ -579,23 +750,57 @@ class AudioWebSocketHandler:
                         "type": "server_vad",
                         "threshold": 0.5,
                         "prefix_padding_ms": 300,
-                        "silence_duration_ms": 200,
+                        "silence_duration_ms": 800,
                         "create_response": True,
                         "interrupt_response": True,
                     },
                 },
-                "output": {
-                    "voice": settings.VOICE,
-                    "format": {
-                        "type": "audio/pcm",
-                        "rate": 24000,
-                    },
-                },
             },
+            # "output": {
+            #     "voice": settings.VOICE,
+            #     "format": {
+            #         "type": "audio/pcm",
+            #         "rate": 24000,
+            #     },
+            # },
             "instructions": self.root_agent_instructions,
-            "tools": self.tool_service.get_tool_definitions(),
+            "tools": tools,
             "tool_choice": "auto",
         }
+        # session_config= session_update_event_param.Session(
+        # "type": "realtime",
+        # model= settings.MODEL,
+        # output_modalities= ["audio"],
+        # "audio": {
+        #     "input": {
+        #         "transcription": {
+        #             "model": "whisper-1",
+        #         },
+        #         "format": {
+        #             "type": "audio/pcm",
+        #             "rate": 24000,
+        #         },
+        #         "turn_detection": {
+        #             "type": "server_vad",
+        #             "threshold": 0.5,
+        #             "prefix_padding_ms": 300,
+        #             "silence_duration_ms": 200,
+        #             "create_response": True,
+        #             "interrupt_response": True,
+        #         },
+        #     },
+        #     "output": {
+        #         "voice": settings.VOICE,
+        #         "format": {
+        #             "type": "audio/pcm",
+        #             "rate": 24000,
+        #         },
+        #     },
+        # },
+        # "instructions": self.root_agent_instructions,
+        # "tools": self.tool_service.get_tool_definitions(),
+        # "tool_choice": "auto")
+
         logger.info(
             f"Sending session update: {json.dumps(session_config, ensure_ascii=False)}",
             extra={"handler": "file"},

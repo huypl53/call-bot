@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   kiai-assistant:
     build:
@@ -15,19 +13,31 @@ services:
       - PYTHONUNBUFFERED=1
     volumes:
       - ./sessions:/app/sessions
+      - ./logs:/app/logs
     restart: unless-stopped
     networks:
       - kiai-network
+      - nodejs-backend-service_nodejs_backend_service_network
     healthcheck:
-      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:5050/')"]
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import requests; requests.get('http://localhost:5050/')",
+        ]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
+    # extra_hosts:
+    #   - "host.docker.internal:host-gateway"
 
 networks:
   kiai-network:
     driver: bridge
+  nodejs-backend-service_nodejs_backend_service_network:
+    external: true
 
 volumes:
   sessions-data:

@@ -41,3 +41,4 @@ tests/
 docker-compose.override.yml
 
 research/
+.env

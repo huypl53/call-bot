@@ -13,14 +13,14 @@ from fastapi.staticfiles import StaticFiles
 
 # from cti.api.audio_websocket_handler import AudioWebSocketHandler
 
-# from cti.api.audio_websocket_handler_new import AudioWebSocketHandler
-from cti.api.audio_websocket_agents_handler import AudioWebSocketHandler
+from cti.api.audio_websocket_handler_new import AudioWebSocketHandler
 from cti.api.routes import router
 
 # from cti.api.websocket_handler import WebSocketHandler
 from cti.api.websocket_handler_new import WebSocketHandler
 from cti.config.settings import Language, settings
 from cti.core.connection_context import ConnectionContext
+from cti.services.tool_service import ToolService
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -83,8 +83,6 @@ web_client_dir = Path(__file__).resolve().parents[2] / "web_client"
 app.mount("/web", StaticFiles(directory=web_client_dir, html=True), name="web_client")
 
 # Initialize WebSocket handlers
-ws_handler = WebSocketHandler()
-audio_ws_handler = AudioWebSocketHandler()
 
 
 @app.websocket("/media-stream")
@@ -109,9 +107,10 @@ async def media_stream_endpoint(websocket: WebSocket):
     with ConnectionContext(language=language):
         logger.info(
             "Media stream endpoint connected: %s, language: %s",
-            websocket.client.host,
+            websocket.client.host if websocket.client else "No host",
             language.value,
         )
+        ws_handler = WebSocketHandler()
         await ws_handler.handle_connection(websocket)
 
 
@@ -137,9 +136,10 @@ async def audio_stream_endpoint(websocket: WebSocket):
     with ConnectionContext(language=language):
         logger.info(
             "Audio stream endpoint connected: %s, language: %s",
-            websocket.client.host,
+            websocket.client.host if websocket.client else "No host",
             language.value,
         )
+        audio_ws_handler = AudioWebSocketHandler()
         await audio_ws_handler.handle_connection(websocket)
 
 
@@ -150,7 +150,7 @@ async def startup_event():
     print("🚀 KIAI Assistant Starting...")
     print("=" * 60)
     print(f"📊 Settings: {settings}")
-    print(f"🔧 Available tools: {ws_handler.tool_service.available_tools}")
+    print(f"🔧 Available default tools: {ToolService().available_tools}")
     print(f"🌐 Server will run on port: {settings.PORT}")
     print("=" * 60)
 

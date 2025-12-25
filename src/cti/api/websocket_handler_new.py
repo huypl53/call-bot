@@ -54,15 +54,23 @@ class WebSocketHandler:
         self.agent_orchestrator = RealtimeAgentOrchestrator(
             self.tool_service, self.websocket_base_url
         )
-        self.tool_service.register_tool(DelegateToAgentTool(self.agent_orchestrator))
+        # self.tool_service.register_tool(DelegateToAgentTool(self.agent_orchestrator))
         self.root_agent_instructions = (
             "Bạn là Root Call Agent, chịu trách nhiệm thoại với khách và giữ websocket Twilio ổn định. "
-            "Bám sát luồng call-flow: (1) bắt máy, hỏi có đặt cho hôm nay không; (2) nếu hôm nay: hỏi nhân viên ưa thích (gợi ý nữ), hỏi giờ bắt đầu và thời lượng dịch vụ, hỏi ưu tiên địa điểm; "
-            "(3) nếu ngày khác: hỏi ngày/giờ mong muốn; (4) vào bước kiểm tra khả dụng, báo khách chờ; "
-            "(5) nếu trống: xin tên + thông tin liên lạc, nhắc lại chi tiết để xác nhận; "
-            "(6) nếu không trống: đề xuất khung giờ khác trong ngày, nếu hết chỗ thì hỏi có muốn đặt ngày khác. "
-            "Handoff qua delegate_to_agent: availability_agent (kiểm tra slot, gợi ý giờ thay thế), booking_agent (dựng và gửi payload đặt lịch), data_agent (tra cứu dịch vụ/nhân viên/chi nhánh/khách). "
-            "Không đọc JSON thô; luôn tóm tắt ngắn gọn, thân thiện."
+            "Luôn nói ngắn gọn, thân thiện, hỏi từng bước một. "
+            "Tuân thủ call-flow rẽ nhánh: "
+            "(1) Bắt máy, hỏi khách có muốn đặt cho hôm nay không. "
+            "(2) Nếu hôm nay: hỏi chỉ định nhân viên (gợi ý nhân viên nữ), hỏi giờ bắt đầu và thời lượng gói. "
+            "(3) Nếu ngày khác: hỏi ngày/giờ mong muốn, sau đó vẫn hỏi nhân viên và thời lượng nếu chưa rõ. "
+            "Nếu khách muốn xem danh sách nhân viên thì dùng get_employee_list. "
+            "(4) Hỏi ưu tiên địa điểm; nếu tên địa điểm mơ hồ thì dùng get_department_list để liệt kê và xác nhận; nếu không ưu tiên thì nói sẽ sắp xếp phù hợp. "
+            "(5) Kiểm tra khả dụng: báo khách chờ và dùng get_available_employees theo startTime/endTime để xác nhận còn chỗ. "
+            "(6) Nếu còn chỗ: hỏi tùy chọn/dịch vụ bổ sung; nếu khách hỏi danh sách thì dùng get_service_list để giới thiệu, nếu không có tùy chọn thì xin lỗi và hỏi lại; "
+            "sau đó hỏi phương thức thanh toán, xin tên khách, nhắc lại toàn bộ chi tiết để xác nhận. "
+            "(7) Nếu không còn chỗ: đề xuất đổi sang khung giờ khác trong ngày và kiểm tra lại; nếu hết chỗ cả ngày thì hỏi có muốn đặt ngày khác, nếu có thì xin ngày/giờ mới và quay lại bước kiểm tra. "
+            "Chỉ gọi create_booking khi đã có đủ thời gian, dịch vụ, nhân viên và tên khách (thêm địa điểm/tùy chọn/thanh toán nếu có). "
+            "Không đọc JSON thô; luôn tóm tắt kết quả tool bằng ngôn ngữ tự nhiên. "
+            "Không tự suy diễn dữ liệu thiếu; nếu thiếu thì hỏi lại."
         )
         self.CHUNK_LENGTH_S = 0.05  # 50ms chunks
         self.SAMPLE_RATE = 8000

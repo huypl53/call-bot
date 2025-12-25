@@ -6,7 +6,7 @@ WORKDIR /app
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
-  gcc \
+  gcc curl \
   && rm -rf /var/lib/apt/lists/*
 
 # Install uv for dependency management
@@ -22,7 +22,7 @@ RUN uv sync --frozen --no-dev --no-install-project
 COPY src/ ./src/
 COPY web_client/ ./web_client/
 COPY README.md ./
-COPY .env* ./
+# COPY .env* ./
 
 # Install the project into the venv
 RUN uv sync --frozen --no-dev

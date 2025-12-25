@@ -13,22 +13,33 @@ from typing import Optional
 
 from cti.config.settings import Language, settings
 
+# Lazy import to avoid circular imports
+if False:  # TYPE_CHECKING
+    from cti.core.session_manager import SessionManager
+from cti.core.session_manager import SessionManager
+
 # Context variables
 audio_record_folder: contextvars.ContextVar[Optional[Path]] = contextvars.ContextVar(
     "audio_record_folder", default=None
 )
-context_logger: contextvars.ContextVar[Optional[logging.Logger]] = contextvars.ContextVar(
-    "context_logger", default=None
+context_logger: contextvars.ContextVar[Optional[logging.Logger]] = (
+    contextvars.ContextVar("context_logger", default=None)
 )
-connection_language: contextvars.ContextVar[Optional[Language]] = contextvars.ContextVar(
-    "connection_language", default=None
+connection_language: contextvars.ContextVar[Optional[Language]] = (
+    contextvars.ContextVar("connection_language", default=None)
+)
+# Session manager context for tool access
+_current_session_manager: contextvars.ContextVar[Optional["SessionManager"]] = (
+    contextvars.ContextVar("current_session_manager", default=None)
 )
 
 
 class ConnectionContext:
     """Context manager for WebSocket connections with audio recording and logging"""
 
-    def __init__(self, connection_id: Optional[str] = None, language: Optional[Language] = None):
+    def __init__(
+        self, connection_id: Optional[str] = None, language: Optional[Language] = None
+    ):
         """
         Initialize connection context.
 
@@ -72,7 +83,7 @@ class ConnectionContext:
         # Create a handler that forwards all root logger messages to context logger
         class ContextForwardHandler(logging.Handler):
             """Handler that forwards logs to context logger"""
-            
+
             def emit(self, record: logging.LogRecord):
                 """Forward log record to context logger"""
                 ctx_logger = context_logger.get()
@@ -80,9 +91,9 @@ class ConnectionContext:
                     try:
                         # Skip if this record was already processed by context logger
                         # to avoid duplicates
-                        if hasattr(record, 'from_context_logger'):
+                        if hasattr(record, "from_context_logger"):
                             return
-                        
+
                         # Create a new record with context logger name
                         new_record = logging.LogRecord(
                             name=ctx_logger.name,
@@ -107,19 +118,23 @@ class ConnectionContext:
         # Save original language and update global settings
         self.original_language = settings.LANGUAGE
         self.original_language_str = settings.language_str
-        
+
         # Update global settings.LANGUAGE if different
         if self.language != self.original_language:
             settings.LANGUAGE = self.language
             settings.language_str = self.language.value
-            self.logger.info(f"Updated global settings.LANGUAGE from {self.original_language.value} to {self.language.value}")
+            self.logger.info(
+                f"Updated global settings.LANGUAGE from {self.original_language.value} to {self.language.value}"
+            )
 
         # Set context variables
         audio_record_folder.set(self.record_folder)
         context_logger.set(self.logger)
         connection_language.set(self.language)
 
-        self.logger.info(f"Connection context initialized: {self.connection_id}, language: {self.language.value}")
+        self.logger.info(
+            f"Connection context initialized: {self.connection_id}, language: {self.language.value}"
+        )
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -138,11 +153,16 @@ class ConnectionContext:
             self.context_forward_handler.close()
 
         # Restore original language in global settings
-        if self.original_language is not None and self.original_language_str is not None:
+        if (
+            self.original_language is not None
+            and self.original_language_str is not None
+        ):
             settings.LANGUAGE = self.original_language
             settings.language_str = self.original_language_str
             if self.logger:
-                self.logger.info(f"Restored global settings.LANGUAGE to {self.original_language.value}")
+                self.logger.info(
+                    f"Restored global settings.LANGUAGE to {self.original_language.value}"
+                )
 
         # Clear context variables
         audio_record_folder.set(None)
@@ -165,7 +185,7 @@ def get_context_logger() -> Optional[logging.Logger]:
 def get_connection_language() -> Language:
     """
     Get the current connection language from context.
-    
+
     Returns:
         Language enum value. Falls back to settings.LANGUAGE if not set.
     """
@@ -176,7 +196,7 @@ def get_connection_language() -> Language:
 def log_to_context(level: str, message: str, *args, **kwargs):
     """
     Log to both regular logger and context logger if available.
-    
+
     Args:
         level: Log level ('info', 'debug', 'error', 'warning', 'warn')
         message: Log message
@@ -208,7 +228,7 @@ def record_audio(audio_data: str, source: str, timestamp: Optional[int] = None):
     """
     folder = audio_record_folder.get()
     logger = context_logger.get()
-    
+
     if not folder or not logger:
         return
 
@@ -236,19 +256,19 @@ def record_audio(audio_data: str, source: str, timestamp: Optional[int] = None):
         counter = 1
 
     # Format: YYYY-MM-DD_HH-MM-SS_mmm_source_counter.wav (human-readable)
-    filename = f"{now.strftime('%Y-%m-%d_%H-%M-%S')}_{now.microsecond//1000:03d}_{source_key}_{counter:04d}.wav"
+    filename = f"{now.strftime('%Y-%m-%d_%H-%M-%S')}_{now.microsecond // 1000:03d}_{source_key}_{counter:04d}.wav"
     audio_file = folder / filename
 
     try:
         # Decode base64 audio data to PCM16 bytes
         pcm_data = base64.b64decode(audio_data)
-        
+
         # Convert PCM16 to WAV format using wave module
         # Parameters: (nchannels, sampwidth, framerate, nframes, comptype, compname)
         # nchannels=1 for mono, sampwidth=2 for 16-bit (2 bytes per sample)
         sample_rate = 24000  # OpenAI uses 24000 Hz
-        with wave.open(str(audio_file), 'wb') as wav_file:
-            wav_file.setparams((1, 2, sample_rate, 0, 'NONE', 'NONE'))
+        with wave.open(str(audio_file), "wb") as wav_file:
+            wav_file.setparams((1, 2, sample_rate, 0, "NONE", "NONE"))
             wav_file.writeframes(pcm_data)
 
         logger.debug(
@@ -257,3 +277,17 @@ def record_audio(audio_data: str, source: str, timestamp: Optional[int] = None):
     except Exception as e:
         logger.error(f"Failed to record audio: {e}", exc_info=True)
 
+
+def set_session_manager(sm: "SessionManager") -> None:
+    """Set the current session manager in context for tool access."""
+    _current_session_manager.set(sm)
+
+
+def get_session_manager() -> Optional["SessionManager"]:
+    """Get the current session manager from context."""
+    return _current_session_manager.get()
+
+
+def clear_session_manager() -> None:
+    """Clear the session manager from context."""
+    _current_session_manager.set(None)

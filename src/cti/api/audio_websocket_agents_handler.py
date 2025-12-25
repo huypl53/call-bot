@@ -8,34 +8,26 @@ import json
 import uuid
 from dataclasses import dataclass, field
 from logging import getLogger
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple, cast
 
+from agents.realtime import RealtimeRunner, RealtimeSession
+from agents.realtime.config import RealtimeUserInputMessage
+from agents.realtime.model import RealtimeModelConfig
 from fastapi import WebSocket
 from fastapi.websockets import WebSocketDisconnect
 
-# Imports removed - now using agents SDK
-
-from cti.api.audio_types import (
-    AudioMessage,
-    ControlMessage,
-    StartMessage,
-    TextMessage,
-)
-from cti.agents.realtime_agent_orchestrator import RealtimeAgentOrchestrator
-from cti.config.constants import LOG_EVENT_TYPES
+from cti.agents.booking_agents import get_starting_agent
+from cti.api.audio_types import AudioMessage, StartMessage, TextMessage
 from cti.config.prompts import SYSTEM_MESSAGE
 from cti.config.settings import settings
-from cti.core.connection_context import get_connection_language, record_audio
+from cti.core.connection_context import (
+    get_audio_record_folder,
+    get_connection_language,
+    record_audio,
+    set_session_manager,
+)
 from cti.core.session_manager import SessionManager
-from cti.services.tool_service import ToolService
-from cti.tools.delegation import DelegateToAgentTool
-from langsmith.wrappers import wrap_openai
-
-# Import agents SDK components
-from agents.realtime import RealtimeRunner
-from agents.realtime.model import RealtimeModelConfig
-from agents.realtime.config import RealtimeUserInputMessage
-from cti.agents.math_agents import get_starting_agent
+from cti.services.audio_merge_service import AudioMergeService
 
 logger = getLogger(__name__)
 
@@ -51,18 +43,19 @@ class ConnectionState:
     response_start_timestamp: Optional[int] = None
     is_paused: bool = False
     last_interruption_time: int = 0
-    interruption_cooldown_ms: int = 1000
+    interruption_cooldown_ms: int = 500
     is_response_active: bool = False
     current_response_id: Optional[str] = None
     openai_audio_chunks: List[str] = field(default_factory=list)
     client_audio_chunks: List[str] = field(default_factory=list)
+    recording_chunks: List[Tuple[str, str]] = field(default_factory=list)
     # Agents SDK components
     runner: Optional[RealtimeRunner] = None
-    session_context: Optional[Any] = None
-    realtime_session: Optional[Any] = None
+    session_context: Optional[RealtimeSession] = None
+    realtime_session: Optional[RealtimeSession] = None
 
 
-BOT_INTERRUPT_DELAY = 500
+BOT_INTERRUPT_DELAY = 200
 
 
 class AudioWebSocketHandler:
@@ -70,36 +63,16 @@ class AudioWebSocketHandler:
 
     def __init__(self):
         """Initialize the audio websocket handler."""
-        # self.tool_service = ToolService()
         self.websocket_base_url = self._build_websocket_base_url()
-        # self.agent_orchestrator = RealtimeAgentOrchestrator(
-        #     self.tool_service, self.websocket_base_url
-        # )
-        # self.tool_service.register_tool(DelegateToAgentTool(self.agent_orchestrator))
-
-        # Use Vietnamese instructions for math operations
-        self.root_agent_instructions = (
-            "Bạn là trợ lý toán học, hãy lắng nghe yêu cầu và giúp người dùng thực hiện các phép tính cơ bản. "
-            "Bạn có thể thực hiện: cộng (+), trừ (-), nhân (×), chia (÷). "
-            "Khi nghe yêu cầu, hãy xác nhận phép toán và thực hiện. "
-            "Ví dụ: '5 cộng 3', '10 trừ 2', '4 nhân 6', '15 chia 3'. "
-            "Hãy luôn trả lời bằng tiếng Việt một cách thân thiện và rõ ràng."
-        )
-        # self.root_agent_instructions = str(SYSTEM_MESSAGE)
-        # self.root_agent_instructions = (
-        #     "Bạn là Root Call Agent, chịu trách nhiệm thoại với khách và giữ websocket ổn định. "
-        #     "Bám sát luồng call-flow: (1) bắt máy, hỏi có đặt cho hôm nay không; (2) nếu hôm nay: hỏi nhân viên ưa thích (gợi ý nữ), hỏi giờ bắt đầu và thời lượng dịch vụ, hỏi ưu tiên địa điểm; "
-        #     "(3) nếu ngày khác: hỏi ngày/giờ mong muốn; (4) vào bước kiểm tra khả dụng, báo khách chờ; "
-        #     "(5) nếu trống: xin tên + thông tin liên lạc, nhắc lại chi tiết để xác nhận; "
-        #     "(6) nếu không trống: đề xuất khung giờ khác trong ngày, nếu hết chỗ thì hỏi có muốn đặt ngày khác. "
-        #     "Handoff qua delegate_to_agent: availability_agent (kiểm tra slot, gợi ý giờ thay thế), booking_agent (dựng và gửi payload đặt lịch), data_agent (tra cứu dịch vụ/nhân viên/chi nhánh/khách). "
-        #     "Không đọc JSON thô; luôn tóm tắt ngắn gọn, thân thiện."
-        # )
+        self.root_agent_instructions = str(SYSTEM_MESSAGE)
 
     async def handle_connection(self, websocket: WebSocket):
         """Main handler for WebSocket connections using agents SDK."""
         logger.info("=== Audio client connected ===")
         await websocket.accept()
+
+        audio_folder = get_audio_record_folder()
+        connection_id = audio_folder.name if audio_folder else None
 
         state = ConnectionState()
 
@@ -110,34 +83,43 @@ class AudioWebSocketHandler:
             logger.info(
                 f"Agent tools: {[tool.name for tool in agent.tools] if agent.tools else 'None'}"
             )
-            logger.info(
-                f"Agent handoffs: {[h.name for h in agent.handoffs] if agent.handoffs else 'None'}"
+            handoff_names = (
+                [getattr(h, "name", getattr(h, "to_agent", h)) for h in agent.handoffs]
+                if agent.handoffs
+                else "None"
             )
+            logger.info(f"Agent handoffs: {handoff_names}")
 
             state.runner = RealtimeRunner(agent)
 
             # Configure model with audio settings
-            model_config: RealtimeModelConfig = {
-                "initial_model_settings": {
-                    "turn_detection": {
-                        "type": "server_vad",
-                        "prefix_padding_ms": 300,
-                        "silence_duration_ms": 200,
-                        "interrupt_response": True,
-                        "create_response": True,
-                    },
-                    "audio": {
-                        "input": {
-                            "format": {"type": "audio/pcm", "rate": 24000},
-                            "transcription": {"model": "whisper-1"},
+            model_config: RealtimeModelConfig = cast(
+                RealtimeModelConfig,
+                {
+                    "initial_model_settings": {
+                        "turn_detection": {
+                            "type": "server_vad",
+                            "prefix_padding_ms": 300,
+                            "silence_duration_ms": 200,
+                            "interrupt_response": True,
+                            "create_response": True,
+                        },
+                        "audio": {
+                            "input": {
+                                "format": {"type": "audio/pcm", "rate": 24000},
+                                "transcription": {"model": "whisper-1"},
+                            },
                         },
                     },
                 },
-            }
+            )
 
             # Start the session
             logger.info("Starting RealtimeRunner session...")
-            state.session_context = await state.runner.run(model_config=model_config)
+            session_context: RealtimeSession = await state.runner.run(
+                model_config=model_config
+            )
+            state.session_context = session_context
             state.realtime_session = await state.session_context.__aenter__()
             logger.info("Session initialized successfully")
 
@@ -146,7 +128,9 @@ class AudioWebSocketHandler:
                     self._agent_session_loop(state.realtime_session, websocket, state)
                 ),
                 asyncio.create_task(
-                    self._client_message_loop(websocket, state.realtime_session, state)
+                    self._client_message_loop(
+                        websocket, state.realtime_session, state, connection_id
+                    )
                 ),
             ]
 
@@ -184,22 +168,23 @@ class AudioWebSocketHandler:
 
     async def _agent_session_loop(
         self,
-        session: Any,  # RealtimeSession from agents SDK
+        session: RealtimeSession,  # RealtimeSession from agents SDK
         websocket: WebSocket,
         state: ConnectionState,
     ):
         """Listen for events from the agents SDK session."""
         try:
             async for event in session:
-                await self._handle_agent_event(event, websocket, state)
+                await self._handle_agent_event(event, session, websocket, state)
         except Exception as exc:
             logger.error(f"Error in agent session loop: {exc}", exc_info=True)
 
     async def _client_message_loop(
         self,
         websocket: WebSocket,
-        session: Any,  # RealtimeSession from agents SDK
+        session: RealtimeSession,  # RealtimeSession from agents SDK
         state: ConnectionState,
+        connection_id: Optional[str] = None,
     ):
         """Listen for messages from client WebSocket and handle them."""
         try:
@@ -249,7 +234,7 @@ class AudioWebSocketHandler:
                         continue
 
                     await self._handle_client_message(
-                        message, session, websocket, state
+                        message, session, websocket, state, connection_id
                     )
 
                 except (KeyError, ValueError, TypeError) as exc:
@@ -295,6 +280,7 @@ class AudioWebSocketHandler:
     async def _handle_agent_event(
         self,
         event: Any,  # RealtimeSessionEvent from agents SDK
+        session: RealtimeSession,  # RealtimeSession from agents SDK
         websocket: WebSocket,
         state: ConnectionState,
     ):
@@ -356,9 +342,18 @@ class AudioWebSocketHandler:
             )
 
         elif event_type == "audio":
+            state.is_response_active = True
             # Send audio to client
             audio_payload = base64.b64encode(event.audio.data).decode("utf-8")
             state.openai_audio_chunks.append(audio_payload)
+            state.recording_chunks.append(("openai", audio_payload))
+
+            item_id = getattr(event, "item_id", None)
+            if item_id and item_id != state.last_assistant_item:
+                state.response_start_timestamp = state.latest_media_timestamp
+                state.last_assistant_item = item_id
+            elif not item_id and state.last_assistant_item is None:
+                state.last_assistant_item = "assistant_audio"
 
             await websocket.send_json(
                 {
@@ -373,6 +368,8 @@ class AudioWebSocketHandler:
             logger.info("Audio interrupted", extra={"handler": "file"})
             state.is_response_active = False
             state.current_response_id = None
+            await self._flush_recording_buffer(state)
+            await websocket.send_json({"event": "response.cancelled"})
             await websocket.send_json({"event": "clear"})
 
         elif event_type == "audio_end":
@@ -380,19 +377,41 @@ class AudioWebSocketHandler:
             state.is_response_active = False
             state.current_response_id = None
             logger.info("Audio response ended", extra={"handler": "file"})
+            await self._flush_recording_buffer(state)
 
-            # Save audio if needed
-            if state.openai_audio_chunks:
-                complete_audio = "".join(state.openai_audio_chunks)
-                record_audio(complete_audio, "openai", state.latest_media_timestamp)
-                state.openai_audio_chunks.clear()
-
-            if state.client_audio_chunks:
-                complete_client_audio = "".join(state.client_audio_chunks)
-                record_audio(
-                    complete_client_audio, "client", state.latest_media_timestamp
+        elif event_type == "conversation.item.input_audio_transcription.completed" and (
+            transcript := getattr(event, "transcript", None)
+        ):
+            logger.info(f"USER transcription: {transcript}")
+            try:
+                await websocket.send_json(
+                    {
+                        "event": "transcription",
+                        "transcript": f"USER:\t{transcript}",
+                        "timestamp": state.latest_media_timestamp,
+                    }
                 )
-                state.client_audio_chunks.clear()
+            except Exception as exc:
+                logger.info(f"Failed to forward USER transcription: {exc}")
+
+        elif event_type == "response.output_audio_transcript.done" and (
+            transcript := getattr(event, "transcript", None)
+        ):
+            logger.info(f"AI transcription: {transcript}")
+            try:
+                await websocket.send_json(
+                    {
+                        "event": "transcription",
+                        "transcript": f"AI:\t{transcript}",
+                        "timestamp": state.latest_media_timestamp,
+                    }
+                )
+            except Exception as exc:
+                logger.info(f"Failed to forward AI transcription: {exc}")
+
+        elif event_type == "input_audio_buffer.speech_started":
+            logger.info("input_audio_buffer.speech_started", extra={"handler": "file"})
+            await self._handle_speech_started(session, websocket, state)
 
         elif event_type == "error":
             logger.error(f"Agent error: {event.error}", extra={"handler": "file"})
@@ -401,12 +420,59 @@ class AudioWebSocketHandler:
         elif event_type == "input_audio_timeout_triggered":
             logger.info("Input audio timeout triggered", extra={"handler": "file"})
 
+        elif event_type == "history_updated":
+            # Send full sanitized conversation history
+            history = getattr(event, "history", [])
+            sanitized_history = [self._sanitize_history_item(item) for item in history]
+            await websocket.send_json(
+                {"event": "history_updated", "history": sanitized_history}
+            )
+
+        elif event_type == "history_added":
+            # Send individual item as it's added (for incremental UI updates)
+            item = getattr(event, "item", None)
+            if item:
+                try:
+                    sanitized_item = self._sanitize_history_item(item)
+                    await websocket.send_json(
+                        {"event": "history_added", "item": sanitized_item}
+                    )
+                except Exception as exc:
+                    logger.warning(f"Failed to sanitize history item: {exc}")
+                    await websocket.send_json({"event": "history_added", "item": None})
+
+    def _sanitize_history_item(self, item: Any) -> Dict[str, Any]:
+        """Remove large binary payloads from history items while keeping transcripts."""
+        # Handle both dict and object with model_dump method
+        if hasattr(item, "model_dump"):
+            item_dict = item.model_dump()
+        elif isinstance(item, dict):
+            item_dict = item.copy()
+        else:
+            item_dict = {"raw": str(item)}
+
+        content = item_dict.get("content")
+        if isinstance(content, list):
+            sanitized_content: List[Any] = []
+            for part in content:
+                if isinstance(part, dict):
+                    sanitized_part = part.copy()
+                    # Remove binary audio data but keep transcripts
+                    if sanitized_part.get("type") in {"audio", "input_audio"}:
+                        sanitized_part.pop("audio", None)
+                    sanitized_content.append(sanitized_part)
+                else:
+                    sanitized_content.append(part)
+            item_dict["content"] = sanitized_content
+        return item_dict
+
     async def _handle_client_message(
         self,
         message: Dict,
-        session: Any,  # RealtimeSession from agents SDK
+        session: RealtimeSession,  # RealtimeSession from agents SDK
         websocket: WebSocket,
         state: ConnectionState,
+        connection_id: Optional[str] = None,
     ):
         """Handle incoming messages from client."""
         event_type = message.get("event")
@@ -417,31 +483,59 @@ class AudioWebSocketHandler:
             await self._handle_start_event(message, state)
         elif event_type == "text":
             await self._handle_text_message(message, websocket, session)
+        elif event_type == "disconnect":
+            await self._handle_disconnect_event(websocket, state, connection_id)
         elif event_type in ("pause", "resume", "stop", "clear"):
             await self._handle_control_message(message, session, websocket, state)
 
     async def _handle_audio_event(
         self,
         message: Dict,
-        session: Any,  # RealtimeSession from agents SDK
+        session: RealtimeSession,  # RealtimeSession from agents SDK
         state: ConnectionState,
     ):
         """Handle audio data from client."""
         if state.is_paused:
             return
 
-        audio_msg: AudioMessage = message
+        audio_msg = cast(AudioMessage, message)
         payload = audio_msg.get("payload", "")
         timestamp = audio_msg.get("timestamp", 0)
 
         if payload:
             state.latest_media_timestamp = timestamp or state.latest_media_timestamp
             state.client_audio_chunks.append(payload)
+            state.recording_chunks.append(("client", payload))
             await session.send_audio(base64.b64decode(payload))
+
+    async def _flush_recording_buffer(self, state: ConnectionState):
+        """Persist accumulated mixed audio (client + openai) in arrival order."""
+        if not state.recording_chunks:
+            state.openai_audio_chunks.clear()
+            state.client_audio_chunks.clear()
+            return
+
+        try:
+            combined_bytes = b"".join(
+                base64.b64decode(chunk) for _, chunk in state.recording_chunks
+            )
+            encoded_audio = base64.b64encode(combined_bytes).decode("utf-8")
+            record_audio(encoded_audio, "conversation", state.latest_media_timestamp)
+            logger.info(
+                "Saved conversation audio: %s bytes from %s chunks",
+                len(combined_bytes),
+                len(state.recording_chunks),
+            )
+        except Exception as exc:
+            logger.warning(f"Failed to flush recording buffer: {exc}")
+        finally:
+            state.recording_chunks.clear()
+            state.openai_audio_chunks.clear()
+            state.client_audio_chunks.clear()
 
     async def _handle_start_event(self, message: Dict, state: ConnectionState):
         """Handle session start event."""
-        start_msg: StartMessage = message
+        start_msg = cast(StartMessage, message)
         state.session_id = start_msg.get("session_id")
         if not state.session_id:
             state.session_id = str(uuid.uuid4())
@@ -449,15 +543,17 @@ class AudioWebSocketHandler:
             f"Session started: {state.session_id}, language: {get_connection_language().value}"
         )
         state.session_manager = SessionManager(state.session_id)
+        # Set session_manager in context for tool access
+        set_session_manager(state.session_manager)
 
     async def _handle_text_message(
         self,
         message: Dict,
         websocket: WebSocket,
-        session: Any,  # RealtimeSession from agents SDK
+        session: RealtimeSession,  # RealtimeSession from agents SDK
     ):
         """Handle text message by sending it to the conversation."""
-        text_msg: TextMessage = message
+        text_msg = cast(TextMessage, message)
         text = text_msg.get("text", "")
 
         if not text:
@@ -473,7 +569,7 @@ class AudioWebSocketHandler:
                 "role": "user",
                 "content": [{"text": text, "type": "input_text"}],
             }
-            await session.send_user_message(user_msg)
+            await session.send_message(user_msg)
         except Exception as exc:
             logger.info(f"Error sending text message: {exc}")
             await websocket.send_json(
@@ -483,7 +579,7 @@ class AudioWebSocketHandler:
     async def _handle_control_message(
         self,
         message: Dict,
-        session: Any,  # RealtimeSession from agents SDK
+        session: RealtimeSession,  # RealtimeSession from agents SDK
         websocket: WebSocket,
         state: ConnectionState,
     ):
@@ -512,9 +608,64 @@ class AudioWebSocketHandler:
                     f"Error clearing session: {exc}", extra={"handler": "file"}
                 )
 
+    async def _handle_disconnect_event(
+        self,
+        websocket: WebSocket,
+        state: ConnectionState,
+        connection_id: Optional[str] = None,
+    ):
+        """Handle disconnect event from client - merge audio and send download URL."""
+        logger.info("Received disconnect event from client")
+
+        await self._flush_recording_buffer(state)
+
+        if connection_id:
+            try:
+                audio_service = AudioMergeService()
+                merged_path = audio_service.merge_audio_files(connection_id)
+
+                if merged_path:
+                    audio_url = f"/audio/{connection_id}/download"
+                    await websocket.send_json(
+                        {
+                            "event": "session.ended",
+                            "audio_download_url": audio_url,
+                            "connection_id": connection_id,
+                        }
+                    )
+                    logger.info(f"Sent audio download URL: {audio_url}")
+                else:
+                    await websocket.send_json(
+                        {
+                            "event": "session.ended",
+                            "audio_download_url": None,
+                            "connection_id": connection_id,
+                        }
+                    )
+                    logger.info(
+                        "No audio files to merge, sent session.ended without URL"
+                    )
+            except Exception as exc:
+                logger.error(f"Failed to merge audio or send URL: {exc}")
+                await websocket.send_json(
+                    {
+                        "event": "session.ended",
+                        "audio_download_url": None,
+                        "connection_id": connection_id,
+                        "error": str(exc),
+                    }
+                )
+        else:
+            await websocket.send_json(
+                {
+                    "event": "session.ended",
+                    "audio_download_url": None,
+                }
+            )
+
     async def _handle_speech_started(
         self,
-        session: Any,  # RealtimeSession from agents SDK
+        session: RealtimeSession,  # RealtimeSession from agents SDK
         websocket: WebSocket,
         state: ConnectionState,
     ):
@@ -530,14 +681,15 @@ class AudioWebSocketHandler:
             return
 
         async def _interrupt_bot_voice():
-            await asyncio.sleep(BOT_INTERRUPT_DELAY)
-            await websocket.send_json({"event": "clear"})
-
-        asyncio.create_task(_interrupt_bot_voice())
+            try:
+                await websocket.send_json({"event": "clear"})
+            except Exception as exc:
+                logger.debug(str(exc))
 
         logger.info("Speech started detected", extra={"handler": "file"})
 
         if state.is_response_active and state.last_assistant_item:
+            await _interrupt_bot_voice()
             logger.info(
                 f"User interrupting active response with id: {state.last_assistant_item}",
                 extra={"handler": "file"},

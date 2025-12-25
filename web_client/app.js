@@ -264,11 +264,10 @@ class AudioWebSocketClient {
 
       this.log("Microphone access granted", "success");
 
-      // Create audio context at 24kHz - no resampling needed!
+      // Create audio context at native sample rate - we'll resample before sending
       if (!this.audioContext) {
         this.audioContext =
           new (window.AudioContext || window.webkitAudioContext)({
-            sampleRate: 24000,
             latencyHint: "interactive",
           });
       }
@@ -318,9 +317,24 @@ class AudioWebSocketClient {
           return;
         }
 
+        // Resample from native sample rate to target 24kHz before sending
+        const inputSampleRate = this.audioContext.sampleRate;
+        let resampledChunk = chunk;
+        if (inputSampleRate !== this.targetSampleRate) {
+          // Convert Int16 to Float32 for resampling
+          const float32 = new Float32Array(chunk.length);
+          for (let i = 0; i < chunk.length; i++) {
+            float32[i] = chunk[i] / 32768;
+          }
+          // Resample
+          const resampled = this.resampleFloat32(float32, inputSampleRate, this.targetSampleRate);
+          // Convert back to Int16
+          resampledChunk = this.floatTo16BitPCM(resampled);
+        }
+
         // Send audio immediately - no throttling needed with AudioWorklet
         try {
-          const base64 = this.arrayBufferToBase64(chunk.buffer);
+          const base64 = this.arrayBufferToBase64(resampledChunk.buffer);
           const message = {
             event: "audio",
             payload: base64,
@@ -342,7 +356,8 @@ class AudioWebSocketClient {
       this.recorderNode.connect(this.audioContext.destination);
 
       this.isRecording = true;
-      this.log("Recording started (AudioWorklet)", "success");
+      const needsResample = this.audioContext.sampleRate !== this.targetSampleRate;
+      this.log(`Recording started (AudioWorklet) at ${this.audioContext.sampleRate}Hz${needsResample ? ` → resampling to ${this.targetSampleRate}Hz` : ""}`, "success");
     } catch (error) {
       console.error("[AUDIO] Failed to start recording:", error);
       this.log(`Failed to start recording: ${error.message}`, "error");

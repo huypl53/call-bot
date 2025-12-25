@@ -1,0 +1,19 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path' | { read file_path; if echo \"$file_path\" | grep -q '\\.py$'; then uv tool run ruff format \"$file_path\" && uv tool run ruff check --fix \"$file_path\"; fi; }"
+          },
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path' | { read file_path; if echo \"$file_path\" | grep -q '\\.py$'; then uv tool run pyright \"$file_path\"; fi; }"
+          }
+        ]
+      }
+    ]
+  }
+}

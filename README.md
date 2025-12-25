@@ -80,9 +80,10 @@ src/
 │   └── twilio_service.py
 ├── tools/               # AI Tools
 │   ├── base.py          # Abstract base class
-│   ├── room_checker.py
-│   ├── booking_saver.py
-│   └── summary_getter.py
+│   ├── booking_api.py   # Booking API tool
+│   ├── department_api.py
+│   ├── employee_api.py
+│   └── service_api.py
 ├── api/                 # API layer
 │   ├── routes.py
 │   └── websocket_handler.py

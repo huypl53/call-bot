@@ -5,27 +5,13 @@ Tool Service - Registry và execution cho tools
 from typing import Any, Dict, List, Optional
 
 from cti.tools.base import BaseTool
-from cti.tools.booking_api import (
-    CreateBookingTool,
-    GetBookingCalendarTool,
-    GetBookingDetailTool,
-    GetBookingListTool,
-    UpdateBookingStatusTool,
-)
-from cti.tools.customer_api import (
-    CreateCustomerTool,
-    DeleteCustomerTool,
-    GetCustomerListTool,
-    UpdateCustomerTool,
-)
+from cti.tools.booking_api import CreateBookingTool
 from cti.tools.department_api import GetDepartmentListTool
 from cti.tools.employee_api import (
     GetAvailableEmployeesTool,
-    GetEmployeeBookingsTool,
     GetEmployeeListTool,
 )
 from cti.tools.service_api import GetServiceListTool
-from cti.tools.summary_getter import SummaryGetterTool
 
 from openai.types.realtime import RealtimeFunctionToolParam
 
@@ -43,7 +29,6 @@ class ToolService:
 
     def _register_default_tools(self):
         """Register các tools mặc định"""
-        # Chỉ đăng ký các tool cần cho call-flow và các API hiện có
         tools = [
             CreateBookingTool(),
             GetEmployeeListTool(),

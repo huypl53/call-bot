@@ -421,8 +421,14 @@ CÁCH NHẬN BIẾT:
 - Hỏi thông tin, khiếu nại → inquiry_other
 
 CÁCH TRẢ LỜI:
-- Xác nhận ngắn gọn và tiếp tục hỏi thông tin tiếp theo
-- Ví dụ: "Vâng, quý khách muốn đặt cho hôm nay. Quý khách muốn bắt đầu lúc mấy giờ ạ?"
+- Nếu khách chưa nói rõ ý định, hỏi câu mở đầu: "Anh/chị muốn đặt lịch cho hôm nay phải không ạ?"
+- Nếu booking_today: xác nhận ngắn gọn rồi HANDOFF sang Slot Filler để hỏi "có chỉ định tiếp viên không"
+- Nếu booking_other_day: xác nhận "Vâng, anh/chị muốn đặt vào ngày khác đúng không ạ?"
+  * Khi khách xác nhận, HANDOFF sang Slot Filler để xin ngày mong muốn
+- Nếu inquiry_other: HANDOFF sang Human Handoff ngay
+
+VÍ DỤ CÁCH TRẢ LỜI:
+- "Vâng ạ." (sau đó handoff sang Slot Filler)
 """,
     tools=[get_current_datetime_tool],
 )
@@ -438,22 +444,28 @@ slot_filler_agent = RealtimeAgent(
 {UNIFIED_ASSISTANT_PREFIX}
 
 NHIỆM VỤ CỦA BẠN:
-Thu thập thông tin đặt lịch theo thứ tự:
-1. Thời gian bắt đầu (ví dụ: 7 giờ tối → 19:00)
-2. Gói dịch vụ / thời lượng (ví dụ: gói 60 phút)
-3. Có chỉ định nhân viên không?
-4. Địa điểm sử dụng dịch vụ
+Thu thập thông tin đặt lịch theo đúng luồng:
+1. Nếu đặt ngày khác, xin ngày mong muốn
+2. Hỏi có chỉ định tiếp viên không
+3. Hỏi thời gian bắt đầu
+4. Hỏi gói dịch vụ / thời lượng
+5. Hỏi yêu cầu địa điểm sử dụng
 
 QUY TẮC:
 - Hỏi TỪNG THÔNG TIN MỘT, không hỏi dồn
 - Chuẩn hóa thời gian: "7 giờ tối" → 19:00
 - Nếu khách đổi thông tin, xác nhận lại
 - Dùng tool calculate_end_time để tính thời gian kết thúc
+- Nếu khách hỏi danh sách gói/dịch vụ, tên tiếp viên, hoặc địa điểm trống, HANDOFF sang Catalog Agent
+- Nếu khách nêu địa điểm cụ thể, xác nhận lại địa điểm đó trước khi tiếp tục
+- Nếu khách nói "bên em chọn" hoặc "đến khách sạn bên em", HANDOFF sang Catalog Agent để giới thiệu địa điểm còn trống
+- Sau khi đã đủ thông tin và xác nhận thời gian + gói dịch vụ, HANDOFF sang Availability Agent
 
 VÍ DỤ CÁCH HỎI:
-- "Quý khách muốn bắt đầu lúc mấy giờ ạ?"
-- "Quý khách chọn gói bao nhiêu phút ạ?"
-- "Quý khách có chỉ định nhân viên nào không ạ?"
+- "Anh/chị có chỉ định tiếp viên không ạ?"
+- "Anh/chị muốn bắt đầu lúc mấy giờ ạ?"
+- "Anh/chị chọn gói bao nhiêu phút ạ?"
+- "Anh/chị có yêu cầu về địa điểm sử dụng không ạ?"
 """,
     tools=[calculate_end_time_tool, get_current_datetime_tool],
 )
@@ -478,6 +490,7 @@ QUY TẮC:
 - Nếu tìm thấy nhiều kết quả, đọc danh sách và hỏi khách chọn
 - Nếu không tìm thấy, thông báo và gợi ý tìm kiếm khác
 - KHÔNG đọc ID cho khách, chỉ đọc tên và thông tin cần thiết
+- Sau khi khách chọn xong, HANDOFF về Slot Filler để tiếp tục luồng
 
 VÍ DỤ CÁCH TRẢ LỜI:
 - "Dạ, chúng tôi có gói 60 phút với giá X. Quý khách xác nhận chọn gói này ạ?"
@@ -503,11 +516,14 @@ Kiểm tra lịch trống:
 
 QUY TẮC:
 - Format thời gian nội bộ: YYYY-MM-DD HH:mm
-- Nếu CÓ lịch trống: thông báo ngay "Hiện tại còn chỗ trống ạ!"
+- Bắt đầu kiểm tra với câu: "Vâng ạ, xin anh/chị đợi một chút để em kiểm tra tình trạng trống."
+- Nếu CÓ lịch trống: thông báo "Có chỗ trống rồi ạ!" rồi HANDOFF sang Options Agent
 - Nếu KHÔNG có lịch trống:
-  * "Rất tiếc khung giờ này đã kín. Quý khách có thể đổi sang giờ khác không ạ?"
-  * Gợi ý khung giờ khác nếu có
-  * Nếu kín cả ngày: "Hôm nay đã kín lịch. Quý khách có muốn đặt ngày khác không ạ?"
+  * "Rất tiếc khung giờ này đã kín. Anh/chị có thể đổi sang giờ khác không ạ?"
+  * Nếu khách đồng ý và đưa giờ mới, kiểm tra lại
+  * Nếu khách nói hết chỗ cả ngày hoặc không đổi giờ: "Hôm nay bên em đã kín lịch cả ngày. Anh/chị có muốn đặt sang ngày khác không ạ?"
+    - Nếu khách muốn ngày khác, HANDOFF sang Slot Filler để xin ngày/giờ mới
+    - Nếu không, kết thúc lịch sự
 
 VÍ DỤ CÁCH TRẢ LỜI:
 - "Vâng, xin phép kiểm tra lịch trống... Hiện tại còn chỗ trống ạ!"
@@ -538,6 +554,7 @@ QUY TẮC:
 - Chỉ chấp nhận option trong danh sách trên
 - Có thể chọn nhiều option
 - Nếu khách không muốn thêm, tiếp tục bước tiếp theo
+- Sau khi xác nhận options (hoặc không chọn), HANDOFF sang Payment Agent
 
 VÍ DỤ CÁCH HỎI:
 - "Quý khách có muốn thêm tùy chọn nào không ạ?"
@@ -568,6 +585,7 @@ NHIỆM VỤ CỦA BẠN:
 QUY TẮC:
 - Chỉ chấp nhận 2 phương thức trên
 - Xác nhận lại phương thức đã chọn
+- Sau khi xác nhận phương thức, HANDOFF sang Confirmation Agent để xin tên và xác nhận booking
 
 VÍ DỤ CÁCH HỎI:
 - "Quý khách muốn thanh toán bằng tiền mặt hay thẻ ạ?"
@@ -587,6 +605,7 @@ confirmation_agent = RealtimeAgent(
 {UNIFIED_ASSISTANT_PREFIX}
 
 NHIỆM VỤ CỦA BẠN:
+0. Nếu chưa có tên khách hàng, hỏi: "Cho em xin tên của anh/chị ạ?" rồi xác nhận lại
 1. Đọc lại toàn bộ thông tin booking cho khách:
    - Ngày giờ
    - Dịch vụ
@@ -605,6 +624,7 @@ QUY TẮC:
 - Chỉ tạo booking khi khách đã xác nhận
 - Format thời gian cho create_booking: YYYY-MM-DD HH:mm:ss
 - KHÔNG đọc ID hay thông tin kỹ thuật
+- Nếu khách muốn sửa thời gian/dịch vụ/nhân viên/địa điểm, HANDOFF về Slot Filler
 
 VÍ DỤ CÁCH XÁC NHẬN:
 "Xin xác nhận lại: Quý khách đặt lịch hôm nay lúc 19h, gói 60 phút, thanh toán tiền mặt. Quý khách xác nhận đúng không ạ?"
@@ -661,16 +681,15 @@ PHONG CÁCH:
 - Thiếu thông tin gì thì hỏi, không tự suy diễn
 
 LUỒNG ĐẶT LỊCH:
-1. Chào và hỏi: "Xin chào! Quý khách muốn đặt lịch cho hôm nay phải không ạ?"
-2. Xác nhận ngày (hôm nay / ngày khác)
-3. Hỏi giờ bắt đầu và gói dịch vụ
-4. Hỏi có chỉ định nhân viên không
-5. Hỏi địa điểm (nếu cần)
-6. Kiểm tra lịch trống
-7. Hỏi options bổ sung (nếu muốn)
-8. Hỏi phương thức thanh toán
-9. Hỏi tên khách hàng
-10. Xác nhận lại toàn bộ và tạo booking
+Bạn KHÔNG tự xử lý chi tiết từng bước. Luôn HANDOFF cho agent phù hợp:
+1. Handoff Intent Router ngay khi bắt đầu để hỏi và phân loại nhu cầu
+2. Slot Filler: thu thập ngày/giờ, gói, tiếp viên, địa điểm
+3. Catalog Agent: tra cứu dịch vụ/nhân viên/địa điểm khi cần
+4. Availability Agent: kiểm tra lịch trống và xử lý đổi giờ/ngày
+5. Options Agent: hỏi tùy chọn bổ sung
+6. Payment Agent: thu phương thức thanh toán
+7. Confirmation Agent: xin tên, xác nhận và tạo booking
+8. Human Handoff Agent: câu hỏi ngoài đặt lịch
 
 THÔNG TIN CẦN THU THẬP:
 - Ngày giờ (startTime, endTime)
@@ -685,6 +704,7 @@ QUY TẮC QUAN TRỌNG:
 - Xác nhận lại thông tin sau mỗi bước quan trọng
 - Nếu khách thay đổi, cập nhật và xác nhận lại
 - Nếu khách hỏi ngoài đặt lịch → kết nối lễ tân
+- Nếu không chắc đang ở bước nào, HANDOFF về Intent Router
 """,
     tools=[get_current_datetime_tool],
     handoffs=[
@@ -700,14 +720,19 @@ QUY TẮC QUAN TRỌNG:
 )
 
 # Add return handoffs so specialized agents can return to supervisor
-intent_router_agent.handoffs.append(supervisor_agent)
-slot_filler_agent.handoffs.append(supervisor_agent)
-slot_filler_agent.handoffs.append(catalog_agent)
-catalog_agent.handoffs.append(supervisor_agent)
-availability_agent.handoffs.append(supervisor_agent)
-options_agent.handoffs.append(supervisor_agent)
-payment_agent.handoffs.append(supervisor_agent)
-confirmation_agent.handoffs.append(supervisor_agent)
+intent_router_agent.handoffs.extend(
+    [slot_filler_agent, human_handoff_agent, supervisor_agent]
+)
+slot_filler_agent.handoffs.extend(
+    [catalog_agent, availability_agent, supervisor_agent]
+)
+catalog_agent.handoffs.extend([slot_filler_agent, supervisor_agent])
+availability_agent.handoffs.extend(
+    [options_agent, slot_filler_agent, supervisor_agent]
+)
+options_agent.handoffs.extend([payment_agent, supervisor_agent])
+payment_agent.handoffs.extend([confirmation_agent, supervisor_agent])
+confirmation_agent.handoffs.extend([slot_filler_agent, supervisor_agent])
 # human_handoff_agent doesn't need to return - it ends the flow
 
 

@@ -63,7 +63,7 @@ class AudioWebSocketHandler:
 
     def __init__(self):
         """Initialize the audio websocket handler."""
-        self.websocket_base_url = self._build_websocket_base_url()
+        # self.websocket_base_url = self._build_websocket_base_url()
         self.root_agent_instructions = str(SYSTEM_MESSAGE)
 
     async def handle_connection(self, websocket: WebSocket):
@@ -90,7 +90,25 @@ class AudioWebSocketHandler:
             )
             logger.info(f"Agent handoffs: {handoff_names}")
 
-            state.runner = RealtimeRunner(agent)
+            state.runner = RealtimeRunner(
+                starting_agent=agent,
+                config={
+                    "model_settings": {
+                        "model_name": "gpt-realtime",
+                        "voice": "ash",
+                        "modalities": ["audio"],
+                        "input_audio_format": "pcm16",
+                        "output_audio_format": "pcm16",
+                        "input_audio_transcription": {
+                            "model": "gpt-4o-mini-transcribe"
+                        },
+                        "turn_detection": {
+                            "type": "semantic_vad",
+                            "interrupt_response": True,
+                        },
+                    }
+                },
+            )
 
             # Configure model with audio settings
             model_config: RealtimeModelConfig = cast(
@@ -424,6 +442,7 @@ class AudioWebSocketHandler:
             # Send full sanitized conversation history
             history = getattr(event, "history", [])
             sanitized_history = [self._sanitize_history_item(item) for item in history]
+            logger.debug(f"history_updated: {sanitized_history}")
             await websocket.send_json(
                 {"event": "history_updated", "history": sanitized_history}
             )
@@ -437,6 +456,7 @@ class AudioWebSocketHandler:
                     await websocket.send_json(
                         {"event": "history_added", "item": sanitized_item}
                     )
+                    logger.debug(f"history_updated: {sanitized_item}")
                 except Exception as exc:
                     logger.warning(f"Failed to sanitize history item: {exc}")
                     await websocket.send_json({"event": "history_added", "item": None})
@@ -704,16 +724,16 @@ class AudioWebSocketHandler:
                         f"Failed to cancel response: {exc}", extra={"handler": "file"}
                     )
 
-    def _build_websocket_base_url(self) -> str:
-        """Build WebSocket base URL for OpenAI Realtime API."""
-        if settings.OPENAI_BASE_URL.startswith("wss://"):
-            return settings.OPENAI_BASE_URL
-        endpoint = settings.OPENAI_BASE_URL.replace("https://", "").rstrip("/")
-        deployment_name = settings.MODEL
-        return (
-            f"wss://{endpoint}/openai/v1/realtime?"
-            f"api-version=2024-10-01-preview&deployment={deployment_name}"
-        )
+    # def _build_websocket_base_url(self) -> str:
+    #     """Build WebSocket base URL for OpenAI Realtime API."""
+    #     if settings.OPENAI_BASE_URL.startswith("wss://"):
+    #         return settings.OPENAI_BASE_URL
+    #     endpoint = settings.OPENAI_BASE_URL.replace("https://", "").rstrip("/")
+    #     deployment_name = settings.MODEL
+    #     return (
+    #         f"wss://{endpoint}/openai/v1/realtime?"
+    #         f"api-version=2024-10-01-preview&deployment={deployment_name}"
+    #     )
 
     @staticmethod
     def _safe_error_message(exc: Exception) -> str:

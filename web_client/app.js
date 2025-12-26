@@ -27,7 +27,7 @@ class AudioWebSocketClient {
     this.audioSources = []; // Track active audio sources for immediate stop
     this.lastAudioLevel = 0;
     this.targetSampleRate = 24000; // Server-required sample rate
-    this.gainMultiplier = 2.0; // Boost client audio volume sent over WebSocket (watch for clipping)
+    this.gainMultiplier = 3.0; // Boost client audio volume sent over WebSocket (watch for clipping)
     this.micMonitorDelay = 1.25; // Seconds of delay for mic test playback
     this.micMonitorGain = 3.0; // Boost monitor volume (use headphones to avoid feedback)
     this.isMicMonitorActive = false;
@@ -264,10 +264,12 @@ class AudioWebSocketClient {
 
       this.log("Microphone access granted", "success");
 
-      // Create audio context at native sample rate - we'll resample before sending
+      // Create audio context at 24kHz to match server expectation
+      // Browser will handle high-quality resampling internally
       if (!this.audioContext) {
         this.audioContext =
           new (window.AudioContext || window.webkitAudioContext)({
+            sampleRate: this.targetSampleRate, // 24000Hz
             latencyHint: "interactive",
           });
       }
@@ -276,7 +278,11 @@ class AudioWebSocketClient {
         await this.audioContext.resume();
       }
 
-      console.log("[AUDIO] Context sample rate:", this.audioContext.sampleRate);
+      console.log("[AUDIO] Requested sample rate:", this.targetSampleRate);
+      console.log("[AUDIO] Actual context sample rate:", this.audioContext.sampleRate);
+      if (this.audioContext.sampleRate !== this.targetSampleRate) {
+        console.warn("[AUDIO] Browser did not honor requested sample rate, manual resampling will be used");
+      }
 
       // Check for AudioWorklet support
       if (!this.audioContext.audioWorklet) {
@@ -360,12 +366,15 @@ class AudioWebSocketClient {
       this.recorderNode.connect(this.audioContext.destination);
 
       this.isRecording = true;
-      const needsResample =
-        this.audioContext.sampleRate !== this.targetSampleRate;
+      const actualRate = this.audioContext.sampleRate;
+      const needsManualResample = actualRate !== this.targetSampleRate;
       this.log(
-        `Recording started (AudioWorklet) at ${this.audioContext.sampleRate}Hz${needsResample ? ` → resampling to ${this.targetSampleRate}Hz` : ""
+        `Recording started (AudioWorklet) at ${actualRate}Hz${
+          needsManualResample
+            ? ` → manual resampling to ${this.targetSampleRate}Hz (may affect quality)`
+            : " (browser-native, optimal quality)"
         }`,
-        "success",
+        needsManualResample ? "info" : "success",
       );
     } catch (error) {
       console.error("[AUDIO] Failed to start recording:", error);
@@ -543,13 +552,13 @@ class AudioWebSocketClient {
       );
       this.handleSessionEnded(data);
     } else {
-      try {
-        const json_data = JSON.stringify(data);
-        console.warn("[HANDLE] Unknown event type:", eventType, json_data);
-        this.log(`Unknown event type: ${eventType}`, "info");
-      } catch (error) {
-        console.warn("[HANDLE] failed to parse event: ", eventType, data);
-      }
+      // try {
+      //   const json_data = JSON.stringify(data);
+      //   console.warn("[HANDLE] Unknown event type:", eventType);
+      //   this.log(`Unknown event type ${eventType}`, "info");
+      // } catch (error) {
+      //   console.warn("[HANDLE] failed to parse event: ", eventType, data);
+      // }
     }
   }
 

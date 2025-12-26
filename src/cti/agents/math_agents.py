@@ -14,20 +14,6 @@ from cti.config.settings import settings
 
 logger = logging.getLogger(__name__)
 
-# Configure the agents SDK to use Azure OpenAI
-from openai import AsyncAzureOpenAI
-
-# Create Azure OpenAI client
-# Note: OPENAI_BASE_URL from settings is actually the Azure endpoint
-# azure_client = AsyncAzureOpenAI(
-#     api_key=settings.OPENAI_API_KEY,
-#     azure_endpoint=settings.OPENAI_BASE_URL,
-#     api_version="2024-10-01-preview"
-# )
-#
-# # Set as default client for agents SDK
-# set_default_openai_client(azure_client)
-
 
 def get_starting_agent() -> RealtimeAgent:
     """Get the starting triage agent for math operations"""
@@ -162,4 +148,3 @@ addition_agent.handoffs.append(triage_agent)
 subtraction_agent.handoffs.append(triage_agent)
 multiplication_agent.handoffs.append(triage_agent)
 division_agent.handoffs.append(triage_agent)
-

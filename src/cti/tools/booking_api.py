@@ -169,6 +169,7 @@ class CreateBookingTool(BaseTool):
                     "options": {
                         "type": "array",
                         "items": {
+                            "type": "string",
                             "enum": [
                                 "ローター",
                                 "アイマスク",
@@ -180,7 +181,7 @@ class CreateBookingTool(BaseTool):
                                 "電マ",
                                 "顔無し撮影",
                                 "顔有撮影",
-                            ]
+                            ],
                         },
                         "description": "Các lựa chọn bổ sung (tùy chọn)",
                     },

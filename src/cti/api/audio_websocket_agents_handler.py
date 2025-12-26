@@ -16,10 +16,8 @@ from agents.realtime.model import RealtimeModelConfig
 from fastapi import WebSocket
 from fastapi.websockets import WebSocketDisconnect
 
-from cti.agents.booking_agents import get_starting_agent
+from cti.agents.booking_agents import FlowAgentContext, get_starting_agent
 from cti.api.audio_types import AudioMessage, StartMessage, TextMessage
-from cti.config.prompts import SYSTEM_MESSAGE
-from cti.config.settings import settings
 from cti.core.connection_context import (
     get_audio_record_folder,
     get_connection_language,
@@ -28,6 +26,7 @@ from cti.core.connection_context import (
 )
 from cti.core.session_manager import SessionManager
 from cti.services.audio_merge_service import AudioMergeService
+from cti.services.dynamic_prompt_service import DynamicPromptService, FlowState
 
 logger = getLogger(__name__)
 
@@ -43,12 +42,15 @@ class ConnectionState:
     response_start_timestamp: Optional[int] = None
     is_paused: bool = False
     last_interruption_time: int = 0
-    interruption_cooldown_ms: int = 500
+    interruption_cooldown_ms: int = 1000
     is_response_active: bool = False
     current_response_id: Optional[str] = None
     openai_audio_chunks: List[str] = field(default_factory=list)
     client_audio_chunks: List[str] = field(default_factory=list)
     recording_chunks: List[Tuple[str, str]] = field(default_factory=list)
+    current_flow_state: FlowState = FlowState.GREETING
+    booking_context: Dict[str, Any] = field(default_factory=dict)
+    agent_state_by_name: Dict[str, FlowState] = field(default_factory=dict)
     # Agents SDK components
     runner: Optional[RealtimeRunner] = None
     session_context: Optional[RealtimeSession] = None
@@ -63,8 +65,7 @@ class AudioWebSocketHandler:
 
     def __init__(self):
         """Initialize the audio websocket handler."""
-        # self.websocket_base_url = self._build_websocket_base_url()
-        self.root_agent_instructions = str(SYSTEM_MESSAGE)
+        self.prompt_service = DynamicPromptService()
 
     async def handle_connection(self, websocket: WebSocket):
         """Main handler for WebSocket connections using agents SDK."""
@@ -78,17 +79,29 @@ class AudioWebSocketHandler:
 
         try:
             # Initialize the agents SDK runner
-            agent = get_starting_agent()
+            agent, agents_by_state = get_starting_agent(self.prompt_service)
+            flow_context = FlowAgentContext(
+                state=state,
+                prompt_service=self.prompt_service,
+                agents_by_state=agents_by_state,
+            )
+            state.agent_state_by_name = {
+                agent_instance.name: flow_state
+                for flow_state, agent_instance in agents_by_state.items()
+            }
             logger.info(f"Starting agent: {agent.name}")
             logger.info(
                 f"Agent tools: {[tool.name for tool in agent.tools] if agent.tools else 'None'}"
             )
-            handoff_names = (
-                [getattr(h, "name", getattr(h, "to_agent", h)) for h in agent.handoffs]
-                if agent.handoffs
-                else "None"
+            logger.info(
+                f"Flow agents: {[flow_state.value for flow_state in agents_by_state]}"
             )
-            logger.info(f"Agent handoffs: {handoff_names}")
+
+            # Initialize session manager early so tools can access it
+            state.session_id = str(uuid.uuid4())
+            state.session_manager = SessionManager(state.session_id)
+            set_session_manager(state.session_manager)
+            logger.info(f"Session manager initialized: {state.session_id}")
 
             state.runner = RealtimeRunner(
                 starting_agent=agent,
@@ -135,10 +148,11 @@ class AudioWebSocketHandler:
             # Start the session
             logger.info("Starting RealtimeRunner session...")
             session_context: RealtimeSession = await state.runner.run(
-                model_config=model_config
+                context=flow_context, model_config=model_config
             )
             state.session_context = session_context
             state.realtime_session = await state.session_context.__aenter__()
+            flow_context.session = state.realtime_session
             logger.info("Session initialized successfully")
 
             tasks = [
@@ -235,6 +249,8 @@ class AudioWebSocketHandler:
                             )
                             continue
                     elif raw_message.get("type") == "websocket.disconnect":
+                        await session.close()
+                        logger.debug("Session closed due to websocket disconnected")
                         break
                     else:
                         continue
@@ -340,13 +356,25 @@ class AudioWebSocketHandler:
                     "to": event.to_agent.name,
                 }
             )
+            target_state = state.agent_state_by_name.get(event.to_agent.name)
+            if target_state and target_state != state.current_flow_state:
+                previous_state = state.current_flow_state
+                state.current_flow_state = target_state
+                await websocket.send_json(
+                    {
+                        "event": "state_changed",
+                        "previous_state": previous_state.value,
+                        "new_state": target_state.value,
+                        "reason": "handoff",
+                    }
+                )
 
         elif event_type == "tool_start":
             logger.info(f"  Tool started: {event.tool.name}", extra={"handler": "file"})
             await websocket.send_json({"event": "tool_start", "tool": event.tool.name})
 
         elif event_type == "tool_end":
-            output_preview = str(event.output)[:100] if event.output else "None"
+            output_preview = str(event.output) if event.output else "None"
             logger.info(
                 f"  Tool ended: {event.tool.name}, Output: {output_preview}",
                 extra={"handler": "file"},
@@ -384,7 +412,7 @@ class AudioWebSocketHandler:
 
         elif event_type == "audio_interrupted":
             logger.info("Audio interrupted", extra={"handler": "file"})
-            state.is_response_active = False
+            # state.is_response_active = False
             state.current_response_id = None
             await self._flush_recording_buffer(state)
             await websocket.send_json({"event": "response.cancelled"})
@@ -465,7 +493,7 @@ class AudioWebSocketHandler:
         """Remove large binary payloads from history items while keeping transcripts."""
         # Handle both dict and object with model_dump method
         if hasattr(item, "model_dump"):
-            item_dict = item.model_dump()
+            item_dict: Dict[str, Any] = item.model_dump()
         elif isinstance(item, dict):
             item_dict = item.copy()
         else:
@@ -541,11 +569,11 @@ class AudioWebSocketHandler:
             )
             encoded_audio = base64.b64encode(combined_bytes).decode("utf-8")
             record_audio(encoded_audio, "conversation", state.latest_media_timestamp)
-            logger.info(
-                "Saved conversation audio: %s bytes from %s chunks",
-                len(combined_bytes),
-                len(state.recording_chunks),
-            )
+            # logger.info(
+            #     "Saved conversation audio: %s bytes from %s chunks",
+            #     len(combined_bytes),
+            #     len(state.recording_chunks),
+            # )
         except Exception as exc:
             logger.warning(f"Failed to flush recording buffer: {exc}")
         finally:
@@ -556,15 +584,21 @@ class AudioWebSocketHandler:
     async def _handle_start_event(self, message: Dict, state: ConnectionState):
         """Handle session start event."""
         start_msg = cast(StartMessage, message)
-        state.session_id = start_msg.get("session_id")
-        if not state.session_id:
-            state.session_id = str(uuid.uuid4())
+        client_session_id = start_msg.get("session_id")
+
+        # Update session_id if client provides one
+        if client_session_id and client_session_id != state.session_id:
+            state.session_id = client_session_id
+            state.session_manager = SessionManager(state.session_id)
+            set_session_manager(state.session_manager)
+
+        state.current_flow_state = FlowState.GREETING
+        state.booking_context.clear()
         logger.info(
-            f"Session started: {state.session_id}, language: {get_connection_language().value}"
+            f"Session started: {state.session_id}, "
+            f"language: {get_connection_language().value}, "
+            f"flow_state: {state.current_flow_state.value}"
         )
-        state.session_manager = SessionManager(state.session_id)
-        # Set session_manager in context for tool access
-        set_session_manager(state.session_manager)
 
     async def _handle_text_message(
         self,
@@ -651,6 +685,8 @@ class AudioWebSocketHandler:
                             "event": "session.ended",
                             "audio_download_url": audio_url,
                             "connection_id": connection_id,
+                            "final_state": state.current_flow_state.value,
+                            "booking_context": state.booking_context,
                         }
                     )
                     logger.info(f"Sent audio download URL: {audio_url}")
@@ -660,6 +696,7 @@ class AudioWebSocketHandler:
                             "event": "session.ended",
                             "audio_download_url": None,
                             "connection_id": connection_id,
+                            "final_state": state.current_flow_state.value,
                         }
                     )
                     logger.info(
@@ -673,6 +710,7 @@ class AudioWebSocketHandler:
                         "audio_download_url": None,
                         "connection_id": connection_id,
                         "error": str(exc),
+                        "final_state": state.current_flow_state.value,
                     }
                 )
         else:
@@ -680,6 +718,7 @@ class AudioWebSocketHandler:
                 {
                     "event": "session.ended",
                     "audio_download_url": None,
+                    "final_state": state.current_flow_state.value,
                 }
             )
 
@@ -715,6 +754,7 @@ class AudioWebSocketHandler:
                 extra={"handler": "file"},
             )
             state.last_interruption_time = current_time
+            state.is_response_active = False
 
             if state.current_response_id:
                 try:

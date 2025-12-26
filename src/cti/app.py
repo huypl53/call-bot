@@ -155,8 +155,12 @@ async def dynamic_audio_stream_endpoint(websocket: WebSocket):
     Args:
         websocket: FastAPI WebSocket connection
     """
-    from cti.api.audio_websocket_dynamic_prompt import (
-        AudioWebSocketDynamicPromptHandler,
+    # from cti.api.audio_websocket_dynamic_prompt import (
+    #     AudioWebSocketDynamicPromptHandler,
+    # )
+
+    from cti.api.audio_websocket_agents_handler import (
+        AudioWebSocketHandler,
     )
 
     # Extract language from query parameters
@@ -177,7 +181,7 @@ async def dynamic_audio_stream_endpoint(websocket: WebSocket):
             websocket.client.host if websocket.client else "No host",
             language.value,
         )
-        dynamic_handler = AudioWebSocketDynamicPromptHandler()
+        dynamic_handler = AudioWebSocketHandler()
         await dynamic_handler.handle_connection(websocket)
 
 

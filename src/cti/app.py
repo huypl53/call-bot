@@ -12,8 +12,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 # from cti.api.audio_websocket_handler import AudioWebSocketHandler
-# from cti.api.audio_websocket_handler_new import AudioWebSocketHandler
-from cti.api.audio_websocket_agents_handler import AudioWebSocketHandler
+from cti.api.audio_websocket_handler_new import AudioWebSocketHandler
+
+# from cti.api.audio_websocket_agents_handler import AudioWebSocketHandler
 from cti.api.routes import router
 
 # from cti.api.websocket_handler import WebSocketHandler
@@ -141,6 +142,43 @@ async def audio_stream_endpoint(websocket: WebSocket):
         )
         audio_ws_handler = AudioWebSocketHandler()
         await audio_ws_handler.handle_connection(websocket)
+
+
+@app.websocket("/dynamic-audio-stream")
+async def dynamic_audio_stream_endpoint(websocket: WebSocket):
+    """
+    WebSocket endpoint for audio streaming with dynamic prompts.
+
+    Uses a single OpenAI Realtime session with state-based prompt updates
+    instead of multi-agent handoffs.
+
+    Args:
+        websocket: FastAPI WebSocket connection
+    """
+    from cti.api.audio_websocket_dynamic_prompt import (
+        AudioWebSocketDynamicPromptHandler,
+    )
+
+    # Extract language from query parameters
+    language = settings.LANGUAGE  # Default to settings
+    language_param = websocket.query_params.get("language")
+    if language_param:
+        try:
+            language = Language(language_param.lower())
+        except ValueError:
+            logger.warning(
+                f"Invalid language parameter: {language_param}. "
+                f"Using default: {settings.LANGUAGE.value}"
+            )
+
+    with ConnectionContext(language=language):
+        logger.info(
+            "Dynamic audio stream endpoint connected: %s, language: %s",
+            websocket.client.host if websocket.client else "No host",
+            language.value,
+        )
+        dynamic_handler = AudioWebSocketDynamicPromptHandler()
+        await dynamic_handler.handle_connection(websocket)
 
 
 @app.on_event("startup")

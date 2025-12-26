@@ -28,10 +28,12 @@ class Settings:
 
     def __init__(self):
         # Required settings
-        self.OPENAI_API_KEY: str = self._get_required_env("AZURE_OPENAI_API_KEY")
-        self.OPENAI_BASE_URL: str = self._get_required_env("AZURE_OPENAI_BASE_URL")
+        # self.OPENAI_API_KEY: str = self._get_required_env("AZURE_OPENAI_API_KEY")
+        # self.OPENAI_BASE_URL: str = self._get_required_env("AZURE_OPENAI_BASE_URL")
         # self.MODEL: str = 'gpt-realtime-mini'
         self.MODEL: str = self._get_required_env("AZURE_OPENAI_MODEL")
+
+        self.PURE_OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
 
         # Optional settings with defaults
         self.PORT: int = int(os.getenv("PORT", "5050"))
@@ -48,7 +50,9 @@ class Settings:
                 f"Invalid LANGUAGE: {self.language_str}. Must be one of {[lang.value for lang in Language]}"
             )
         # API Host - ensure trailing slash
-        api_host = os.getenv("API_HOST", "https://wan-subacrid-marlon.ngrok-free.dev/api/")
+        api_host = os.getenv(
+            "API_HOST", "https://wan-subacrid-marlon.ngrok-free.dev/api/"
+        )
         self.API_HOST: str = api_host if api_host.endswith("/") else f"{api_host}/"
 
         # Validate settings

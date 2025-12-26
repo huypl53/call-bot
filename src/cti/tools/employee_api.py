@@ -149,7 +149,7 @@ class GetAvailableEmployeesTool(BaseTool):
                     # },
                     "employeeId": {
                         "type": "string",
-                        "description": "Lọc theo ID nhân viên (tùy chọn)",
+                        "description": "Lọc theo ID nhân viên, lấy `employeeId` từ `get_employee_list()`",
                     },
                     "startTime": {
                         "type": "string",

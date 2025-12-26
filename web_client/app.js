@@ -27,7 +27,7 @@ class AudioWebSocketClient {
     this.audioSources = []; // Track active audio sources for immediate stop
     this.lastAudioLevel = 0;
     this.targetSampleRate = 24000; // Server-required sample rate
-    this.gainMultiplier = 3.0; // Boost client audio volume sent over WebSocket (watch for clipping)
+    this.gainMultiplier = 2.0; // Boost client audio volume sent over WebSocket (watch for clipping)
     this.micMonitorDelay = 1.25; // Seconds of delay for mic test playback
     this.micMonitorGain = 3.0; // Boost monitor volume (use headphones to avoid feedback)
     this.isMicMonitorActive = false;
@@ -47,8 +47,8 @@ class AudioWebSocketClient {
     const consoleMethod = type === "error"
       ? "error"
       : type === "success"
-      ? "log"
-      : "info";
+        ? "log"
+        : "info";
     console[consoleMethod](`[${type.toUpperCase()}] ${logMessage}`);
 
     // Also log to UI
@@ -327,7 +327,11 @@ class AudioWebSocketClient {
             float32[i] = chunk[i] / 32768;
           }
           // Resample
-          const resampled = this.resampleFloat32(float32, inputSampleRate, this.targetSampleRate);
+          const resampled = this.resampleFloat32(
+            float32,
+            inputSampleRate,
+            this.targetSampleRate,
+          );
           // Convert back to Int16
           resampledChunk = this.floatTo16BitPCM(resampled);
         }
@@ -356,8 +360,13 @@ class AudioWebSocketClient {
       this.recorderNode.connect(this.audioContext.destination);
 
       this.isRecording = true;
-      const needsResample = this.audioContext.sampleRate !== this.targetSampleRate;
-      this.log(`Recording started (AudioWorklet) at ${this.audioContext.sampleRate}Hz${needsResample ? ` → resampling to ${this.targetSampleRate}Hz` : ""}`, "success");
+      const needsResample =
+        this.audioContext.sampleRate !== this.targetSampleRate;
+      this.log(
+        `Recording started (AudioWorklet) at ${this.audioContext.sampleRate}Hz${needsResample ? ` → resampling to ${this.targetSampleRate}Hz` : ""
+        }`,
+        "success",
+      );
     } catch (error) {
       console.error("[AUDIO] Failed to start recording:", error);
       this.log(`Failed to start recording: ${error.message}`, "error");
@@ -375,7 +384,7 @@ class AudioWebSocketClient {
       this.recorderNode.port.onmessage = null;
       try {
         this.recorderNode.disconnect();
-      } catch (e) {}
+      } catch (e) { }
       this.recorderNode = null;
     }
 
@@ -534,8 +543,13 @@ class AudioWebSocketClient {
       );
       this.handleSessionEnded(data);
     } else {
-      console.warn("[HANDLE] Unknown event type:", eventType, data);
-      this.log(`Unknown event type: ${eventType}`, "info");
+      try {
+        const json_data = JSON.stringify(data);
+        console.warn("[HANDLE] Unknown event type:", eventType, json_data);
+        this.log(`Unknown event type: ${eventType}`, "info");
+      } catch (error) {
+        console.warn("[HANDLE] failed to parse event: ", eventType, data);
+      }
     }
   }
 
@@ -569,7 +583,7 @@ class AudioWebSocketClient {
     this.audioSources.forEach((source) => {
       try {
         source.stop();
-      } catch (e) {}
+      } catch (e) { }
     });
     this.audioSources = [];
 
@@ -577,7 +591,7 @@ class AudioWebSocketClient {
     if (this.playbackNode) {
       try {
         this.playbackNode.port.postMessage({ type: "stop" });
-      } catch (e) {}
+      } catch (e) { }
     }
 
     this.isPlaying = false;
@@ -648,8 +662,7 @@ class AudioWebSocketClient {
 
       this.isMicMonitorActive = true;
       this.log(
-        `Mic test playing with ${
-          Math.round(this.micMonitorDelay * 1000)
+        `Mic test playing with ${Math.round(this.micMonitorDelay * 1000)
         }ms delay at ${this.micMonitorContext.sampleRate}Hz`,
         "success",
       );
@@ -664,31 +677,31 @@ class AudioWebSocketClient {
     if (this.micGainNode) {
       try {
         this.micGainNode.disconnect();
-      } catch (e) {}
+      } catch (e) { }
     }
 
     if (this.micDelayNode) {
       try {
         this.micDelayNode.disconnect();
-      } catch (e) {}
+      } catch (e) { }
     }
 
     if (this.micMonitorSource) {
       try {
         this.micMonitorSource.disconnect();
-      } catch (e) {}
+      } catch (e) { }
     }
 
     if (this.micCompressor) {
       try {
         this.micCompressor.disconnect();
-      } catch (e) {}
+      } catch (e) { }
     }
 
     if (this.micMonitorContext && !keepContext) {
       try {
         this.micMonitorContext.close();
-      } catch (e) {}
+      } catch (e) { }
       this.micMonitorContext = null;
     }
 
